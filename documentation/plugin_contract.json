@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PluginContract",
+  "type": "object",
+  "properties": {
+    "plugin_id": {
+      "type": "string"
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "timeout": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "plugin_id",
+    "input_schema",
+    "output_schema"
+  ]
+}

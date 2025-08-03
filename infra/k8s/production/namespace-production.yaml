@@ -1,0 +1,171 @@
+# Production Namespaces with Resource Quotas and Network Policies
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong-system-prod
+  labels:
+    name: kong-system-prod
+    environment: production
+    kuma.io/sidecar-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuma-system-prod
+  labels:
+    name: kuma-system-prod
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-services-prod
+  labels:
+    name: ai-services-prod
+    environment: production
+    kuma.io/sidecar-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-services-prod
+  labels:
+    name: data-services-prod
+    environment: production
+    kuma.io/sidecar-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: auth-services-prod
+  labels:
+    name: auth-services-prod
+    environment: production
+    kuma.io/sidecar-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability-prod
+  labels:
+    name: observability-prod
+    environment: production
+    kuma.io/sidecar-injection: enabled
+---
+# Resource Quotas for Production
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ai-services-quota
+  namespace: ai-services-prod
+spec:
+  hard:
+    requests.cpu: "50"
+    requests.memory: 100Gi
+    limits.cpu: "100"
+    limits.memory: 200Gi
+    persistentvolumeclaims: "20"
+    services: "50"
+    secrets: "50"
+    configmaps: "50"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: data-services-quota
+  namespace: data-services-prod
+spec:
+  hard:
+    requests.cpu: "30"
+    requests.memory: 60Gi
+    limits.cpu: "60"
+    limits.memory: 120Gi
+    persistentvolumeclaims: "30"
+    services: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: auth-services-quota
+  namespace: auth-services-prod
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+    persistentvolumeclaims: "10"
+    services: "10"
+---
+# Network Policies for Production Security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-services-network-policy
+  namespace: ai-services-prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kong-system-prod
+    - namespaceSelector:
+        matchLabels:
+          name: ai-services-prod
+    - namespaceSelector:
+        matchLabels:
+          name: auth-services-prod
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: data-services-prod
+    - namespaceSelector:
+        matchLabels:
+          name: auth-services-prod
+    - namespaceSelector:
+        matchLabels:
+          name: observability-prod
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-services-network-policy
+  namespace: auth-services-prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kong-system-prod
+    - namespaceSelector:
+        matchLabels:
+          name: ai-services-prod
+    - namespaceSelector:
+        matchLabels:
+          name: data-services-prod
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443

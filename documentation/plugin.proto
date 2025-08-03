@@ -1,0 +1,18 @@
+syntax = "proto3";
+package ai_cos.plugin.v1alpha1;
+
+message PluginInvoked {
+  string plugin_id = 1;
+  string execution_id = 2;
+  string tenant_id = 3;
+  string result = 4;
+  string timestamp = 5;
+}
+
+message PluginExecutionFailed {
+  string plugin_id = 1;
+  string execution_id = 2;
+  string error = 3;
+  string tenant_id = 4;
+  string timestamp = 5;
+}

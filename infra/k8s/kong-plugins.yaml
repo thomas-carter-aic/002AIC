@@ -1,0 +1,101 @@
+# Rate Limiting Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limiting-global
+  namespace: kong-system
+config:
+  minute: 1000
+  hour: 10000
+  policy: local
+plugin: rate-limiting
+---
+# CORS Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: cors-global
+  namespace: kong-system
+config:
+  origins:
+    - "*"
+  methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - PATCH
+    - OPTIONS
+  headers:
+    - Accept
+    - Accept-Version
+    - Content-Length
+    - Content-MD5
+    - Content-Type
+    - Date
+    - Authorization
+    - X-Auth-Token
+  exposed_headers:
+    - X-Auth-Token
+  credentials: true
+  max_age: 3600
+plugin: cors
+---
+# Prometheus Metrics Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: prometheus-global
+  namespace: kong-system
+config:
+  per_consumer: true
+  status_code_metrics: true
+  latency_metrics: true
+  bandwidth_metrics: true
+  upstream_health_metrics: true
+plugin: prometheus
+---
+# Request Transformer Plugin for AI Services
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: ai-request-transformer
+  namespace: kong-system
+config:
+  add:
+    headers:
+      - "X-Service-Type:ai-ml"
+      - "X-Request-ID:$(uuid)"
+    querystring:
+      - "timestamp:$(timestamp)"
+plugin: request-transformer
+---
+# JWT Authentication Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: kong-system
+config:
+  uri_param_names:
+    - jwt
+  cookie_names:
+    - jwt
+  claims_to_verify:
+    - exp
+    - iat
+  key_claim_name: iss
+  secret_is_base64: false
+plugin: jwt
+---
+# Request Size Limiting Plugin
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: request-size-limiting
+  namespace: kong-system
+config:
+  allowed_payload_size: 10
+  size_unit: megabytes
+  require_content_length: false
+plugin: request-size-limiting

@@ -1,0 +1,40 @@
+openapi: 3.0.0
+info:
+  title: Execution Service API
+  version: v1
+paths:
+  /v1/executions:
+    post:
+      summary: Start a new agent execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionRequest'
+      responses:
+        '202':
+          description: Accepted
+  /v1/executions/{id}:
+    get:
+      summary: Get execution result
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execution result
+components:
+  schemas:
+    ExecutionRequest:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        input_payload:
+          type: object
+        tenant_id:
+          type: string

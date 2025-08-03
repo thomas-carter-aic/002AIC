@@ -1,0 +1,183 @@
+# Kong Gateway Configuration
+kong:
+  # Kong Gateway deployment
+  deployment:
+    kong:
+      enabled: true
+  
+  # Kong Gateway configuration
+  env:
+    # Database configuration (using PostgreSQL)
+    database: postgres
+    pg_host: kong-postgresql
+    pg_port: 5432
+    pg_database: kong
+    pg_user: kong
+    pg_password:
+      valueFrom:
+        secretKeyRef:
+          name: kong-postgresql
+          key: password
+    
+    # Kong configuration
+    proxy_access_log: /dev/stdout
+    admin_access_log: /dev/stdout
+    admin_gui_access_log: /dev/stdout
+    portal_api_access_log: /dev/stdout
+    proxy_error_log: /dev/stderr
+    admin_error_log: /dev/stderr
+    admin_gui_error_log: /dev/stderr
+    portal_api_error_log: /dev/stderr
+    
+    # Enable Kong Manager (Admin GUI)
+    admin_gui_url: http://localhost:8002
+    admin_api_uri: http://localhost:8001
+    
+    # Enable Developer Portal
+    portal: "on"
+    portal_gui_host: localhost:8003
+    portal_api_url: http://localhost:8004
+    portal_cors_origins: "*"
+    
+    # Plugins
+    plugins: "bundled,prometheus,zipkin,jaeger"
+    
+    # Observability
+    tracing_instrumentations: all
+    tracing_sampling_rate: 1.0
+
+  # Kong Ingress Controller
+  ingressController:
+    enabled: true
+    installCRDs: false
+    
+  # PostgreSQL for Kong
+  postgresql:
+    enabled: true
+    auth:
+      username: kong
+      database: kong
+      password: kong-password
+    
+  # Service configuration
+  proxy:
+    enabled: true
+    type: LoadBalancer
+    http:
+      enabled: true
+      servicePort: 80
+      containerPort: 8000
+    tls:
+      enabled: true
+      servicePort: 443
+      containerPort: 8443
+      
+  admin:
+    enabled: true
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 8001
+      containerPort: 8001
+    tls:
+      enabled: true
+      servicePort: 8444
+      containerPort: 8444
+
+  # Manager (Admin GUI)
+  manager:
+    enabled: true
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 8002
+      containerPort: 8002
+    tls:
+      enabled: true
+      servicePort: 8445
+      containerPort: 8445
+
+  # Portal
+  portal:
+    enabled: true
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 8003
+      containerPort: 8003
+    tls:
+      enabled: true
+      servicePort: 8446
+      containerPort: 8446
+
+  portalapi:
+    enabled: true
+    type: ClusterIP
+    http:
+      enabled: true
+      servicePort: 8004
+      containerPort: 8004
+    tls:
+      enabled: true
+      servicePort: 8447
+      containerPort: 8447
+
+# Kuma Service Mesh Configuration
+kuma:
+  controlPlane:
+    # Control plane configuration
+    mode: "standalone"
+    
+    # Observability
+    defaults:
+      skipMeshCreation: false
+    
+    # Metrics
+    metrics:
+      dataplane:
+        enabled: true
+        tags:
+          kuma.io/service: dataplane-metrics
+      zone:
+        enabled: true
+        tags:
+          kuma.io/service: zone-metrics
+    
+    # Tracing
+    tracing:
+      defaultBackend: jaeger
+      backends:
+        - name: jaeger
+          type: jaeger
+          conf:
+            address: jaeger-collector.observability.svc.cluster.local:14268
+            
+    # Logging
+    accessLogs:
+      defaultBackend: file
+      backends:
+        - name: file
+          type: file
+          conf:
+            path: /var/log/access.log
+
+  # Data plane proxy configuration
+  dataPlane:
+    image:
+      tag: "2.5.0"
+    
+  # CNI configuration for transparent proxy
+  cni:
+    enabled: true
+    chained: true
+    netDir: /etc/cni/net.d
+    binDir: /opt/cni/bin
+    confName: 10-calico.conflist
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    
+  # Egress configuration  
+  egress:
+    enabled: true

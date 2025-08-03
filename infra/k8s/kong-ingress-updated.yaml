@@ -1,0 +1,157 @@
+# Kong Ingress for API Gateway with Authorization
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kong-api-gateway
+  namespace: kong-system
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/plugins: rate-limiting-global,cors-global,prometheus-global,security-headers
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+spec:
+  rules:
+  - host: api.002aic.local
+    http:
+      paths:
+      # Authentication routes (Keycloak)
+      - path: /v1/auth/login
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 80
+      - path: /v1/auth/logout
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 80
+      - path: /v1/auth/register
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 80
+      
+      # Authorization routes (Custom Go service)
+      - path: /v1/authz
+        pathType: Prefix
+        backend:
+          service:
+            name: authorization-service
+            port:
+              number: 8080
+      
+      # Protected AI service routes
+      - path: /v1/ai
+        pathType: Prefix
+        backend:
+          service:
+            name: agent-orchestration-service
+            port:
+              number: 8080
+      - path: /v1/models
+        pathType: Prefix
+        backend:
+          service:
+            name: model-management-service
+            port:
+              number: 8080
+      - path: /v1/data
+        pathType: Prefix
+        backend:
+          service:
+            name: data-management-service
+            port:
+              number: 8080
+      - path: /v1/pipelines
+        pathType: Prefix
+        backend:
+          service:
+            name: pipeline-execution-service
+            port:
+              number: 8080
+      - path: /v1/workflows
+        pathType: Prefix
+        backend:
+          service:
+            name: workflow-orchestration-service
+            port:
+              number: 8080
+      - path: /v1/analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 8080
+      - path: /v1/monitoring
+        pathType: Prefix
+        backend:
+          service:
+            name: monitoring-metrics-service
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - api.002aic.local
+    secretName: kong-api-tls
+---
+# Kong Ingress for Keycloak Admin
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-admin
+  namespace: auth-services
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+spec:
+  rules:
+  - host: auth.002aic.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - auth.002aic.local
+    secretName: keycloak-tls
+---
+# Kong Service for Authorization Service with JWT validation
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: authorization-service
+  namespace: kong-system
+  annotations:
+    konghq.com/plugins: jwt-keycloak,user-context-transformer
+spec:
+  protocol: http
+  host: authorization-service.auth-services.svc.cluster.local
+  port: 8080
+  path: /
+---
+# Kong Service for AI Services with Authorization check
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: ai-services
+  namespace: kong-system
+  annotations:
+    konghq.com/plugins: jwt-keycloak,user-context-transformer,ai-request-transformer
+spec:
+  protocol: http
+  host: agent-orchestration-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /

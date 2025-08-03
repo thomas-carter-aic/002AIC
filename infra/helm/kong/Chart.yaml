@@ -1,0 +1,14 @@
+apiVersion: v2
+name: kong-gateway
+description: Kong API Gateway with Kuma Service Mesh
+type: application
+version: 0.1.0
+appVersion: "3.4"
+
+dependencies:
+  - name: kong
+    version: "2.33.0"
+    repository: "https://charts.konghq.com"
+  - name: kuma
+    version: "2.5.0"
+    repository: "https://kumahq.github.io/charts"

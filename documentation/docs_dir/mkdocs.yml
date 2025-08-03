@@ -1,0 +1,9 @@
+site_name: AI Consulting Blueprints
+theme:
+  name: mkdocs
+  features:
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+nav:

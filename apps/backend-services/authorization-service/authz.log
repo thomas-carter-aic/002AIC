@@ -1,0 +1,474 @@
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[9.487ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.459ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[22.947ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'users'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.961ms] [34;1m[rows:-][0m SELECT * FROM "users" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[15.342ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[11.962ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.408ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'users'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[4.326ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.329ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m
+[0m[33m[6.833ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.389ms] [34;1m[rows:-][0m SELECT * FROM "users" LIMIT 1
+
+2025/08/03 02:16:07 [32m
+[0m[33m[9.973ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[9.939ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.467ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[2.810ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'users' AND indexname = 'idx_users_email' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[3.323ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'email') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.341ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m
+[0m[33m[6.951ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.417ms] [34;1m[rows:-][0m SELECT * FROM "users" LIMIT 1
+
+2025/08/03 02:16:07 [32m
+[0m[33m[9.789ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[9.974ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.786ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'users'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.330ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'users' AND indexname = 'idx_users_username' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[3.900ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'username') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[3.592ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'first_name') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[3.578ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'last_name') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[3.328ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'enabled') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.729ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'created_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.649ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'users' AND column_name = 'updated_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'users' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.361ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'users' AND indexname = 'idx_users_email' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.813ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'users' AND indexname = 'idx_users_username' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.309ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.232ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[7.130ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.772ms] [34;1m[rows:-][0m SELECT * FROM "roles" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[10.583ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'roles' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[10.613ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.837ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.823ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND column_name = 'id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.457ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m
+[0m[33m[7.441ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'roles'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.396ms] [34;1m[rows:-][0m SELECT * FROM "roles" LIMIT 1
+
+2025/08/03 02:16:07 [32m
+[0m[33m[10.102ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'roles' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[10.024ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'roles'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.774ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'roles'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.216ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'roles' AND indexname = 'idx_roles_name' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.338ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND column_name = 'name') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.754ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND column_name = 'description') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.788ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND column_name = 'created_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.658ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'roles' AND column_name = 'updated_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.202ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'roles' AND indexname = 'idx_roles_name' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.001ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.254ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[6.470ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.725ms] [34;1m[rows:-][0m SELECT * FROM "user_roles" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[9.832ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'user_roles' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[10.218ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'user_roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.853ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'user_roles'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.346ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles' AND column_name = 'role_id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'user_roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.631ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles' AND column_name = 'user_id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'user_roles' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[2.246ms] [34;1m[rows:1][0m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles' AND constraint_name = 'fk_user_roles_role'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.843ms] [34;1m[rows:1][0m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'user_roles' AND constraint_name = 'fk_user_roles_user'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.124ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.230ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.743ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.704ms] [34;1m[rows:-][0m SELECT * FROM "permissions" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.239ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'permissions' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.222ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.278ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.606ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.204ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.868ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'permissions'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.354ms] [34;1m[rows:-][0m SELECT * FROM "permissions" LIMIT 1
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.241ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'permissions' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[1.272ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'permissions'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.341ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'permissions'
+
+2025/08/03 02:16:07 [32m
+[0m[33m[0.413ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'permissions' AND indexname = 'idx_permissions_name' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.607ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'name') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.605ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'resource') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.614ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'action') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.643ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'description') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.717ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'created_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.745ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'permissions' AND column_name = 'updated_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.406ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'permissions' AND indexname = 'idx_permissions_name' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.983ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.217ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.280ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.663ms] [34;1m[rows:-][0m SELECT * FROM "role_permissions" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.003ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'role_permissions' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.071ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'role_permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.450ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'role_permissions'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.789ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions' AND column_name = 'permission_id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'role_permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.761ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions' AND column_name = 'role_id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'role_permissions' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.848ms] [34;1m[rows:1][0m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions' AND constraint_name = 'fk_role_permissions_permission'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.856ms] [34;1m[rows:1][0m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'role_permissions' AND constraint_name = 'fk_role_permissions_role'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.977ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.262ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[2.047ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'policies'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.974ms] [34;1m[rows:-][0m SELECT * FROM "policies" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.338ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'policies' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[1.372ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'policies'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.386ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'policies'
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.788ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.580ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'p_type') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.567ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v0') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.633ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v1') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.780ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v2') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.794ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v3') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.674ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v4') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.621ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'v5') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.632ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'created_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.685ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'updated_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.663ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'policies' AND column_name = 'deleted_at') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'policies' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/002AIC/apps/backend-services/authorization-service/internal/repository/postgres.go:32
+[0m[33m[0.448ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'policies' AND indexname = 'idx_policies_deleted_at' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.566ms] [34;1m[rows:1][0m SELECT count(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND table_type = 'BASE TABLE'
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.257ms] [34;1m[rows:1][0m SELECT CURRENT_DATABASE()
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[1.796ms] [34;1m[rows:-][0m SELECT c.column_name, c.is_nullable = 'YES', c.udt_name, c.character_maximum_length, c.numeric_precision, c.numeric_precision_radix, c.numeric_scale, c.datetime_precision, 8 * typlen, c.column_default, pd.description, c.identity_increment FROM information_schema.columns AS c JOIN pg_type AS pgt ON c.udt_name = pgt.typname LEFT JOIN pg_catalog.pg_description as pd ON pd.objsubid = c.ordinal_position AND pd.objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = c.table_schema)) where table_catalog = 'authorization' AND table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule'
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.826ms] [34;1m[rows:-][0m SELECT * FROM "casbin_rule" LIMIT 1
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[2.094ms] [34;1m[rows:-][0m SELECT constraint_name FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'casbin_rule' AND constraint_type = 'UNIQUE'
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[1.265ms] [34;1m[rows:-][0m SELECT c.column_name, constraint_name, constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_catalog, table_name, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND c.table_catalog = 'authorization' AND c.table_schema = CURRENT_SCHEMA() AND c.table_name = 'casbin_rule'
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.400ms] [34;1m[rows:-][0m SELECT a.attname as column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+		FROM pg_attribute a JOIN pg_class b ON a.attrelid = b.oid AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA())
+		WHERE a.attnum > 0 -- hide internal columns
+		AND NOT a.attisdropped -- hide deleted columns
+		AND b.relname = 'casbin_rule'
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.731ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'id') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.674ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'ptype') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.594ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v0') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.642ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v1') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.553ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v2') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.600ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v3') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.537ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v4') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:413
+[0m[33m[0.590ms] [34;1m[rows:0][0m SELECT description FROM pg_catalog.pg_description WHERE objsubid = (SELECT ordinal_position FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'casbin_rule' AND column_name = 'v5') AND objoid = (SELECT oid FROM pg_catalog.pg_class WHERE relname = 'casbin_rule' AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = CURRENT_SCHEMA()))
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:419
+[0m[33m[0.669ms] [34;1m[rows:1][0m SELECT count(*) FROM pg_indexes WHERE tablename = 'casbin_rule' AND indexname = 'idx_casbin_rule' AND schemaname = CURRENT_SCHEMA()
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:477
+[0m[33m[1.351ms] [34;1m[rows:56][0m SELECT * FROM "casbin_rule" ORDER BY ID
+
+2025/08/03 02:16:07 [32m/home/oss/go/pkg/mod/github.com/casbin/gorm-adapter/v3@v3.20.0/adapter.go:477
+[0m[33m[0.598ms] [34;1m[rows:56][0m SELECT * FROM "casbin_rule" ORDER BY ID
+{"level":"info","ts":1754201767.6406808,"caller":"service/authorization.go:341","msg":"Default policies initialized"}
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /health                   --> main.main.func1 (5 handlers)
+[GIN-debug] GET    /ready                    --> main.main.func2 (5 handlers)
+[GIN-debug] GET    /metrics                  --> main.main.WrapH.func7 (5 handlers)
+[GIN-debug] POST   /v1/auth/check            --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).CheckPermission-fm (6 handlers)
+[GIN-debug] POST   /v1/auth/batch-check      --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).BatchCheckPermissions-fm (6 handlers)
+[GIN-debug] GET    /v1/auth/permissions      --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).GetUserPermissions-fm (6 handlers)
+[GIN-debug] GET    /v1/policies              --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).ListPolicies-fm (7 handlers)
+[GIN-debug] POST   /v1/policies              --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).CreatePolicy-fm (7 handlers)
+[GIN-debug] PUT    /v1/policies/:id          --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).UpdatePolicy-fm (7 handlers)
+[GIN-debug] DELETE /v1/policies/:id          --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).DeletePolicy-fm (7 handlers)
+[GIN-debug] GET    /v1/roles                 --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).ListRoles-fm (7 handlers)
+[GIN-debug] POST   /v1/roles                 --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).CreateRole-fm (7 handlers)
+[GIN-debug] PUT    /v1/roles/:id             --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).UpdateRole-fm (7 handlers)
+[GIN-debug] DELETE /v1/roles/:id             --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).DeleteRole-fm (7 handlers)
+[GIN-debug] POST   /v1/roles/:id/permissions --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).AssignPermissions-fm (7 handlers)
+[GIN-debug] GET    /v1/users/me              --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).GetCurrentUser-fm (6 handlers)
+[GIN-debug] GET    /v1/users/me/permissions  --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).GetCurrentUserPermissions-fm (6 handlers)
+[GIN-debug] GET    /v1/users                 --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).ListUsers-fm (7 handlers)
+[GIN-debug] GET    /v1/users/:id             --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).GetUser-fm (7 handlers)
+[GIN-debug] POST   /v1/users/:id/roles       --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).AssignUserRoles-fm (7 handlers)
+[GIN-debug] DELETE /v1/users/:id/roles/:roleId --> github.com/002aic/authorization-service/internal/handler.(*AuthorizationHandler).RemoveUserRole-fm (7 handlers)
+{"level":"info","ts":1754201767.6409311,"caller":"server/main.go:162","msg":"Authorization service started","port":8081,"mode":"debug"}
+{"level":"info","ts":1754201773.161695,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"GET","path":"/health","status":200,"body_size":20,"latency":0.000086254}
+{"level":"info","ts":1754201777.146527,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"POST","path":"/v1/auth/check","status":401,"body_size":41,"latency":0.000094425}
+{"level":"info","ts":1754201807.322629,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"GET","path":"/health","status":200,"body_size":20,"latency":0.000053428}
+{"level":"info","ts":1754201807.33121,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"GET","path":"/ready","status":200,"body_size":18,"latency":0.002364822}
+{"level":"info","ts":1754201909.5771432,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"GET","path":"/health","status":200,"body_size":20,"latency":0.000134305}
+{"level":"info","ts":1754201909.5904138,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"POST","path":"/v1/auth/check","status":401,"body_size":41,"latency":0.000067047}
+{"level":"info","ts":1754201909.597324,"caller":"middleware/middleware.go:54","msg":"HTTP Request","client_ip":"::1","method":"POST","path":"/v1/auth/batch-check","status":401,"body_size":41,"latency":0.000098825}

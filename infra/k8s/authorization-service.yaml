@@ -1,0 +1,277 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authorization-service
+  namespace: auth-services
+  labels:
+    app: authorization-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: authorization-service
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: authorization-service
+        version: v1
+      annotations:
+        kuma.io/sidecar-injection: enabled
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: authorization-service
+      containers:
+      - name: authorization-service
+        image: 002aic/authorization-service:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: AUTHZ_SERVER_PORT
+          value: "8080"
+        - name: AUTHZ_SERVER_MODE
+          value: "production"
+        - name: AUTHZ_DB_HOST
+          value: "postgresql.auth-services.svc.cluster.local"
+        - name: AUTHZ_DB_PORT
+          value: "5432"
+        - name: AUTHZ_DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: authorization-db-secret
+              key: username
+        - name: AUTHZ_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: authorization-db-secret
+              key: password
+        - name: AUTHZ_DB_NAME
+          value: "authorization"
+        - name: AUTHZ_REDIS_HOST
+          value: "redis.auth-services.svc.cluster.local"
+        - name: AUTHZ_REDIS_PORT
+          value: "6379"
+        - name: AUTHZ_REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: password
+        - name: AUTHZ_JWT_PUBLIC_KEY_URL
+          value: "http://keycloak.auth-services.svc.cluster.local/auth/realms/002aic/protocol/openid-connect/certs"
+        - name: AUTHZ_JWT_ISSUER
+          value: "http://keycloak.auth-services.svc.cluster.local/auth/realms/002aic"
+        - name: AUTHZ_JWT_AUDIENCE
+          value: "002aic-api"
+        - name: AUTHZ_KEYCLOAK_BASE_URL
+          value: "http://keycloak.auth-services.svc.cluster.local"
+        - name: AUTHZ_KEYCLOAK_REALM
+          value: "002aic"
+        - name: AUTHZ_KEYCLOAK_CLIENT_ID
+          value: "002aic-api"
+        - name: AUTHZ_KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-client-secret
+              key: client-secret
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authorization-service
+  namespace: auth-services
+  labels:
+    app: authorization-service
+spec:
+  selector:
+    app: authorization-service
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authorization-service
+  namespace: auth-services
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: authorization-db-secret
+  namespace: auth-services
+type: Opaque
+data:
+  username: YXV0aG9yaXphdGlvbg==  # authorization (base64)
+  password: YXV0aG9yaXphdGlvbi1wYXNzd29yZA==  # authorization-password (base64)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: auth-services
+type: Opaque
+data:
+  password: cmVkaXMtcGFzc3dvcmQ=  # redis-password (base64)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-client-secret
+  namespace: auth-services
+type: Opaque
+data:
+  client-secret: YXBpLWNsaWVudC1zZWNyZXQ=  # api-client-secret (base64)
+---
+# PostgreSQL for Authorization Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: auth-services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_DB
+          value: authorization
+        - name: POSTGRES_USER
+          value: authorization
+        - name: POSTGRES_PASSWORD
+          value: authorization-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+      volumes:
+      - name: postgresql-data
+        persistentVolumeClaim:
+          claimName: postgresql-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: auth-services
+spec:
+  selector:
+    app: postgresql
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+  namespace: auth-services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Redis for Authorization Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: auth-services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+      annotations:
+        kuma.io/sidecar-injection: enabled
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command:
+        - redis-server
+        - --requirepass
+        - redis-password
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: auth-services
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP

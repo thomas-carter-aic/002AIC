@@ -1,0 +1,28 @@
+server:
+  port: 8081
+  mode: debug
+
+database:
+  host: localhost
+  port: 15434
+  user: authorization
+  password: authorization-password
+  dbname: authorization
+  sslmode: disable
+
+redis:
+  host: localhost
+  port: 16379
+  password: redis-password
+  db: 0
+
+jwt:
+  public_key_url: http://localhost:8080/realms/002aic/protocol/openid-connect/certs
+  issuer: http://localhost:8080/realms/002aic
+  audience: 002aic-api
+
+keycloak:
+  base_url: http://localhost:8080
+  realm: 002aic
+  client_id: 002aic-api
+  client_secret: api-client-secret

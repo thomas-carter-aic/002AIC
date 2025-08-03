@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # PostgreSQL for Kong
+  kong-database:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_DB: kong
+      POSTGRES_PASSWORD: kong-password
+    volumes:
+      - kong-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    networks:
+      - kong-net
+
+  # Kong Database Migration
+  kong-migration:
+    image: kong:3.4-alpine
+    command: kong migrations bootstrap
+    depends_on:
+      kong-database:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: kong
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong-password
+    networks:
+      - kong-net
+
+  # Kong Gateway
+  kong:
+    image: kong:3.4-alpine
+    depends_on:
+      kong-migration:
+        condition: service_completed_successfully
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: kong
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong-password
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+      KONG_PLUGINS: bundled,prometheus,zipkin,jaeger
+    ports:
+      - "8000:8000"  # Proxy HTTP
+      - "8443:8443"  # Proxy HTTPS
+      - "8001:8001"  # Admin API
+      - "8002:8002"  # Admin GUI
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - kong-net
+    volumes:
+      - ./kong-plugins:/usr/local/share/lua/5.1/kong/plugins/custom
+
+  # Kuma Control Plane
+  kuma-control-plane:
+    image: kumahq/kuma-cp:2.5.0
+    environment:
+      KUMA_STORE_TYPE: memory
+      KUMA_SDS_SERVER_TLS_CERT_FILE: /tmp/kuma-cp-certs/tls.crt
+      KUMA_SDS_SERVER_TLS_KEY_FILE: /tmp/kuma-cp-certs/tls.key
+      KUMA_GENERAL_ADVERTISED_HOSTNAME: kuma-control-plane
+    ports:
+      - "5681:5681"  # HTTP API and GUI
+      - "5682:5682"  # HTTPS API and GUI
+      - "5678:5678"  # SDS server
+    volumes:
+      - kuma-cp-data:/tmp/kuma-cp
+      - ./certs:/tmp/kuma-cp-certs
+    networks:
+      - kong-net
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector HTTP
+      - "14250:14250"  # Jaeger collector gRPC
+      - "6831:6831/udp"  # Jaeger agent UDP
+    networks:
+      - kong-net
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - kong-net
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - kong-net
+
+volumes:
+  kong-db-data:
+  kuma-cp-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  kong-net:
+    driver: bridge

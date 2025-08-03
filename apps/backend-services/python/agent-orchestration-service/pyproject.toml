@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "agent-orchestration-service"
+version = "0.1.0"
+description = "AI-centric workflow and agent orchestration"
+authors = ["Thomas Carter"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.110"
+uvicorn = "^0.29"
+langchain = "^0.1.16"
+crewai = "^0.28.8"
+aiokafka = "^0.10.0"
+opentelemetry-api = "^1.25.0"
+opentelemetry-sdk = "^1.25.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1.1"
+httpx = "^0.27.0"
+pytest-asyncio = "^0.23.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

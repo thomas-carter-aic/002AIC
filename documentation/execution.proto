@@ -1,0 +1,24 @@
+syntax = "proto3";
+package ai_cos.execution.v1alpha1;
+
+message ExecutionStarted {
+  string execution_id = 1;
+  string agent_id = 2;
+  string tenant_id = 3;
+  string triggered_by = 4;
+  string timestamp = 5;
+}
+
+message ExecutionCompleted {
+  string execution_id = 1;
+  string result = 2;
+  string tenant_id = 3;
+  string timestamp = 4;
+}
+
+message ExecutionFailed {
+  string execution_id = 1;
+  string error_message = 2;
+  string tenant_id = 3;
+  string timestamp = 4;
+}

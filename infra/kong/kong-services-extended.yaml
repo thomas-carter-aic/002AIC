@@ -1,0 +1,606 @@
+# Extended Kong Services Configuration - Remaining 20 Services
+
+# Compute and Resource Management Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: compute-resource-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: compute-resource-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: compute-resource-route
+  namespace: kong-system
+spec:
+  service: compute-resource-service
+  paths:
+  - /v1/compute
+  - /v1/resources
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: storage-management-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: storage-management-service.data-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+  - request-size-limiting
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: storage-management-route
+  namespace: kong-system
+spec:
+  service: storage-management-service
+  paths:
+  - /v1/storage
+  - /v1/files
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+# User and Workspace Management
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: user-management-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: user-management-service.auth-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: user-management-route
+  namespace: kong-system
+spec:
+  service: user-management-service
+  paths:
+  - /v1/users
+  - /v1/profiles
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: workspace-management-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: workspace-management-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: workspace-management-route
+  namespace: kong-system
+spec:
+  service: workspace-management-service
+  paths:
+  - /v1/workspaces
+  - /v1/projects
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+# Notification and Communication Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: notification-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: notification-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: notification-route
+  namespace: kong-system
+spec:
+  service: notification-service
+  paths:
+  - /v1/notifications
+  - /v1/alerts
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: collaboration-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: collaboration-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: collaboration-route
+  namespace: kong-system
+spec:
+  service: collaboration-service
+  paths:
+  - /v1/collaboration
+  - /v1/sharing
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+# Security and Compliance Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: security-scanning-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: security-scanning-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: security-scanning-route
+  namespace: kong-system
+spec:
+  service: security-scanning-service
+  paths:
+  - /v1/security
+  - /v1/scans
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: audit-logging-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: audit-logging-service.observability.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: audit-logging-route
+  namespace: kong-system
+spec:
+  service: audit-logging-service
+  paths:
+  - /v1/audit
+  - /v1/logs
+  methods:
+  - GET
+  - POST
+---
+# Integration and External Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: external-api-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: external-api-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+  - rate-limiting-global
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: external-api-route
+  namespace: kong-system
+spec:
+  service: external-api-service
+  paths:
+  - /v1/external
+  - /v1/integrations
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: webhook-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: webhook-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: webhook-route
+  namespace: kong-system
+spec:
+  service: webhook-service
+  paths:
+  - /v1/webhooks
+  - /v1/callbacks
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+# Specialized AI Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: nlp-processing-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: nlp-processing-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+  - ai-request-transformer
+  - request-size-limiting
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: nlp-processing-route
+  namespace: kong-system
+spec:
+  service: nlp-processing-service
+  paths:
+  - /v1/nlp
+  - /v1/text
+  methods:
+  - GET
+  - POST
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: computer-vision-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: computer-vision-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+  - ai-request-transformer
+  - request-size-limiting
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: computer-vision-route
+  namespace: kong-system
+spec:
+  service: computer-vision-service
+  paths:
+  - /v1/vision
+  - /v1/images
+  methods:
+  - GET
+  - POST
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: recommendation-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: recommendation-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+  - ai-request-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: recommendation-route
+  namespace: kong-system
+spec:
+  service: recommendation-service
+  paths:
+  - /v1/recommendations
+  - /v1/suggest
+  methods:
+  - GET
+  - POST
+---
+# Configuration and Template Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: configuration-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: configuration-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: configuration-route
+  namespace: kong-system
+spec:
+  service: configuration-service
+  paths:
+  - /v1/config
+  - /v1/settings
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: template-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: template-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: template-route
+  namespace: kong-system
+spec:
+  service: template-service
+  paths:
+  - /v1/templates
+  - /v1/blueprints
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+# Billing and Usage Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: billing-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: billing-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: billing-route
+  namespace: kong-system
+spec:
+  service: billing-service
+  paths:
+  - /v1/billing
+  - /v1/invoices
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: usage-tracking-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: usage-tracking-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: usage-tracking-route
+  namespace: kong-system
+spec:
+  service: usage-tracking-service
+  paths:
+  - /v1/usage
+  - /v1/tracking
+  methods:
+  - GET
+  - POST
+---
+# Search and Discovery Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: search-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: search-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: search-route
+  namespace: kong-system
+spec:
+  service: search-service
+  paths:
+  - /v1/search
+  - /v1/discovery
+  methods:
+  - GET
+  - POST
+---
+# Version Control and Backup Services
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: version-control-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: version-control-service.ai-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: version-control-route
+  namespace: kong-system
+spec:
+  service: version-control-service
+  paths:
+  - /v1/versions
+  - /v1/git
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongService
+metadata:
+  name: backup-service
+  namespace: kong-system
+spec:
+  protocol: http
+  host: backup-service.data-services.svc.cluster.local
+  port: 8080
+  path: /
+  plugins:
+  - jwt-keycloak
+  - user-context-transformer
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongRoute
+metadata:
+  name: backup-route
+  namespace: kong-system
+spec:
+  service: backup-service
+  paths:
+  - /v1/backups
+  - /v1/restore
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE

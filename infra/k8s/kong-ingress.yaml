@@ -1,0 +1,102 @@
+# Kong Ingress for API Gateway
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kong-api-gateway
+  namespace: kong-system
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/plugins: rate-limiting-global,cors-global,prometheus-global
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+spec:
+  rules:
+  - host: api.002aic.local
+    http:
+      paths:
+      - path: /v1/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: authentication-service
+            port:
+              number: 8080
+      - path: /v1/ai
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-orchestration-service
+            port:
+              number: 8080
+      - path: /v1/models
+        pathType: Prefix
+        backend:
+          service:
+            name: model-management-service
+            port:
+              number: 8080
+      - path: /v1/data
+        pathType: Prefix
+        backend:
+          service:
+            name: data-management-service
+            port:
+              number: 8080
+      - path: /v1/pipelines
+        pathType: Prefix
+        backend:
+          service:
+            name: pipeline-execution-service
+            port:
+              number: 8080
+      - path: /v1/workflows
+        pathType: Prefix
+        backend:
+          service:
+            name: workflow-orchestration-service
+            port:
+              number: 8080
+      - path: /v1/analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-service
+            port:
+              number: 8080
+      - path: /v1/monitoring
+        pathType: Prefix
+        backend:
+          service:
+            name: monitoring-metrics-service
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    - api.002aic.local
+    secretName: kong-api-tls
+---
+# Kong Ingress for Admin GUI
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kong-admin-gui
+  namespace: kong-system
+  annotations:
+    kubernetes.io/ingress.class: kong
+    konghq.com/strip-path: "false"
+spec:
+  rules:
+  - host: admin.002aic.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kong-kong-manager
+            port:
+              number: 8002
+  tls:
+  - hosts:
+    - admin.002aic.local
+    secretName: kong-admin-tls

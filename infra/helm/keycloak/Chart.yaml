@@ -1,0 +1,11 @@
+apiVersion: v2
+name: keycloak-auth
+description: Keycloak Identity and Access Management
+type: application
+version: 0.1.0
+appVersion: "23.0"
+
+dependencies:
+  - name: keycloak
+    version: "18.4.0"
+    repository: "https://charts.bitnami.com/bitnami"

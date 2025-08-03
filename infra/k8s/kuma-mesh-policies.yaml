@@ -1,0 +1,176 @@
+# Default Mesh
+apiVersion: kuma.io/v1alpha1
+kind: Mesh
+metadata:
+  name: default
+spec:
+  # Enable mTLS by default
+  mtls:
+    enabledBackend: ca-1
+    backends:
+    - name: ca-1
+      type: builtin
+      dpCert:
+        rotation:
+          expiration: 1d
+      conf:
+        caCert:
+          RSAbits: 2048
+          expiration: 10y
+  # Default traffic permissions (deny all, then allow specific)
+  networking:
+    outbound:
+      passthrough: false
+  # Logging configuration
+  logging:
+    defaultBackend: file
+    backends:
+    - name: file
+      type: file
+      conf:
+        path: /var/log/access.log
+  # Tracing configuration
+  tracing:
+    defaultBackend: jaeger
+    backends:
+    - name: jaeger
+      type: jaeger
+      conf:
+        address: jaeger-collector.observability.svc.cluster.local:14268
+---
+# Traffic Permission for AI Services
+apiVersion: kuma.io/v1alpha1
+kind: TrafficPermission
+metadata:
+  name: ai-services-permission
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: kong-proxy
+  - match:
+      kuma.io/service: api-gateway-service
+  destinations:
+  - match:
+      kuma.io/service: agent-orchestration-service
+  - match:
+      kuma.io/service: model-management-service
+  - match:
+      kuma.io/service: model-training-service
+  - match:
+      kuma.io/service: model-tuning-service
+  - match:
+      kuma.io/service: analytics-service
+  - match:
+      kuma.io/service: experimentation-service
+---
+# Traffic Permission for Auth Services
+apiVersion: kuma.io/v1alpha1
+kind: TrafficPermission
+metadata:
+  name: auth-services-permission
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: kong-proxy
+  - match:
+      kuma.io/service: "*"
+  destinations:
+  - match:
+      kuma.io/service: authentication-authorization-service
+---
+# Traffic Permission for Data Services
+apiVersion: kuma.io/v1alpha1
+kind: TrafficPermission
+metadata:
+  name: data-services-permission
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: agent-orchestration-service
+  - match:
+      kuma.io/service: model-training-service
+  - match:
+      kuma.io/service: analytics-service
+  destinations:
+  - match:
+      kuma.io/service: data-management-service
+  - match:
+      kuma.io/service: data-integration-service
+  - match:
+      kuma.io/service: data-versioning-service
+---
+# Circuit Breaker for AI Services
+apiVersion: kuma.io/v1alpha1
+kind: CircuitBreaker
+metadata:
+  name: ai-services-circuit-breaker
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: "*"
+  destinations:
+  - match:
+      kuma.io/service: model-training-service
+  - match:
+      kuma.io/service: model-tuning-service
+  conf:
+    interval: 30s
+    baseEjectionTime: 30s
+    maxEjectionPercent: 50
+    splitExternalAndLocalErrors: false
+    thresholds:
+      maxConnections: 1024
+      maxPendingRequests: 1024
+      maxRequests: 1024
+      maxRetries: 3
+---
+# Retry Policy for Critical Services
+apiVersion: kuma.io/v1alpha1
+kind: Retry
+metadata:
+  name: critical-services-retry
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: "*"
+  destinations:
+  - match:
+      kuma.io/service: authentication-authorization-service
+  - match:
+      kuma.io/service: data-management-service
+  conf:
+    http:
+      numRetries: 3
+      perTryTimeout: 5s
+      backOff:
+        baseInterval: 25ms
+        maxInterval: 250ms
+      retriableStatusCodes:
+      - 500
+      - 502
+      - 503
+      - 504
+---
+# Timeout Policy
+apiVersion: kuma.io/v1alpha1
+kind: Timeout
+metadata:
+  name: default-timeout
+  namespace: kuma-system
+spec:
+  sources:
+  - match:
+      kuma.io/service: "*"
+  destinations:
+  - match:
+      kuma.io/service: "*"
+  conf:
+    connectTimeout: 10s
+    http:
+      requestTimeout: 30s
+      idleTimeout: 60s

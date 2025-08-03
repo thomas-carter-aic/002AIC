@@ -1,0 +1,103 @@
+# OIDC Plugin for Keycloak Integration
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: oidc-keycloak
+  namespace: kong-system
+config:
+  client_id: "002aic-api"
+  client_secret: "api-client-secret"
+  discovery: "http://keycloak.auth-services.svc.cluster.local/auth/realms/002aic/.well-known/openid_configuration"
+  scope: "openid profile email"
+  response_type: "code"
+  ssl_verify: "no"
+  token_endpoint_auth_method: "client_secret_post"
+  session_secret: "change-this-secret-in-production"
+  redirect_after_logout_uri: "/"
+  logout_path: "/logout"
+  redirect_uri_path: "/auth"
+  filters: null
+  logout_methods: 
+    - "POST"
+    - "GET"
+  logout_query_arg: "logout"
+  logout_revoke: true
+plugin: oidc
+---
+# JWT Plugin for API Access (after OIDC)
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-keycloak
+  namespace: kong-system
+config:
+  uri_param_names:
+    - jwt
+  cookie_names:
+    - jwt
+  header_names:
+    - authorization
+  claims_to_verify:
+    - exp
+    - iat
+    - aud
+  key_claim_name: iss
+  secret_is_base64: false
+  run_on_preflight: true
+plugin: jwt
+---
+# Request Transformer to add user context
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: user-context-transformer
+  namespace: kong-system
+config:
+  add:
+    headers:
+      - "X-User-ID:$(headers.x-userinfo-preferred-username)"
+      - "X-User-Email:$(headers.x-userinfo-email)"
+      - "X-User-Roles:$(headers.x-userinfo-realm-access-roles)"
+      - "X-Request-ID:$(uuid)"
+plugin: request-transformer
+---
+# Response Transformer for security headers
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: security-headers
+  namespace: kong-system
+config:
+  add:
+    headers:
+      - "X-Content-Type-Options:nosniff"
+      - "X-Frame-Options:DENY"
+      - "X-XSS-Protection:1; mode=block"
+      - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+  remove:
+    headers:
+      - "Server"
+      - "X-Powered-By"
+plugin: response-transformer
+---
+# Kong Consumer for service-to-service communication
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: internal-services
+  namespace: kong-system
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: internal-services
+---
+# JWT Credential for internal services
+apiVersion: configuration.konghq.com/v1
+kind: KongCredential
+metadata:
+  name: internal-services-jwt
+  namespace: kong-system
+consumerRef: internal-services
+type: jwt
+config:
+  key: "internal-services"
+  secret: "internal-services-secret-change-in-production"

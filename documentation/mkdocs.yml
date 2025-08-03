@@ -1,0 +1,11 @@
+site_name: AI Consulting Blueprints
+theme:
+  name: readthedocs
+  features:
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+nav:
+  - blueprints:
+    - Index: /blueprints/index.md

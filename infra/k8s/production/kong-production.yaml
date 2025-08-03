@@ -1,0 +1,297 @@
+# Production Kong Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong-gateway
+  namespace: kong-system-prod
+  labels:
+    app: kong-gateway
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: kong-gateway
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: kong-gateway
+        version: v1
+      annotations:
+        kuma.io/sidecar-injection: enabled
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kong-serviceaccount
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: kong
+        image: kong:3.4
+        ports:
+        - name: proxy
+          containerPort: 8000
+          protocol: TCP
+        - name: proxy-ssl
+          containerPort: 8443
+          protocol: TCP
+        - name: admin-api
+          containerPort: 8001
+          protocol: TCP
+        - name: admin-ssl
+          containerPort: 8444
+          protocol: TCP
+        env:
+        - name: KONG_DATABASE
+          value: postgres
+        - name: KONG_PG_HOST
+          valueFrom:
+            secretKeyRef:
+              name: kong-postgres-secret
+              key: host
+        - name: KONG_PG_PORT
+          value: "5432"
+        - name: KONG_PG_DATABASE
+          value: kong
+        - name: KONG_PG_USER
+          valueFrom:
+            secretKeyRef:
+              name: kong-postgres-secret
+              key: username
+        - name: KONG_PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: kong-postgres-secret
+              key: password
+        - name: KONG_PROXY_ACCESS_LOG
+          value: /dev/stdout
+        - name: KONG_ADMIN_ACCESS_LOG
+          value: /dev/stdout
+        - name: KONG_PROXY_ERROR_LOG
+          value: /dev/stderr
+        - name: KONG_ADMIN_ERROR_LOG
+          value: /dev/stderr
+        - name: KONG_ADMIN_LISTEN
+          value: 0.0.0.0:8001
+        - name: KONG_ADMIN_GUI_LISTEN
+          value: 0.0.0.0:8002
+        - name: KONG_PLUGINS
+          value: bundled,prometheus,zipkin,jaeger,oidc,jwt
+        - name: KONG_LOG_LEVEL
+          value: notice
+        - name: KONG_NGINX_WORKER_PROCESSES
+          value: "4"
+        - name: KONG_MEM_CACHE_SIZE
+          value: "256m"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /status/ready
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: kong-prefix
+          mountPath: /kong_prefix
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: kong-prefix
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - kong-gateway
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: kong-system-prod
+  labels:
+    app: kong-gateway
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+spec:
+  type: LoadBalancer
+  ports:
+  - name: proxy
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  - name: proxy-ssl
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  selector:
+    app: kong-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-admin
+  namespace: kong-system-prod
+  labels:
+    app: kong-gateway
+spec:
+  type: ClusterIP
+  ports:
+  - name: admin-api
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  - name: admin-ssl
+    port: 8444
+    targetPort: 8444
+    protocol: TCP
+  selector:
+    app: kong-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kong-serviceaccount
+  namespace: kong-system-prod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kong-ingress
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - services
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - configuration.konghq.com
+  resources:
+  - kongplugins
+  - kongconsumers
+  - kongcredentials
+  - kongingresses
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kong-ingress
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kong-ingress
+subjects:
+- kind: ServiceAccount
+  name: kong-serviceaccount
+  namespace: kong-system-prod
+---
+# Horizontal Pod Autoscaler for Kong
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kong-hpa
+  namespace: kong-system-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kong-gateway
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kong-pdb
+  namespace: kong-system-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: kong-gateway
