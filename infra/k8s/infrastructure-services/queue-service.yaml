@@ -1,0 +1,222 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-service
+  namespace: aic-infrastructure
+  labels:
+    app: queue-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: queue-service
+  template:
+    metadata:
+      labels:
+        app: queue-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: queue-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: queue-service
+        image: 002aic/queue-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: queue-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: RABBITMQ_URL
+          value: "amqp://rabbitmq-service.aic-infrastructure.svc.cluster.local:5672"
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: queue-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: queue-service-config
+      - name: queue-storage
+        persistentVolumeClaim:
+          claimName: queue-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-service
+  namespace: aic-infrastructure
+  labels:
+    app: queue-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: queue-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: queue-service
+  namespace: aic-infrastructure
+  labels:
+    app: queue-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: queue-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: queue-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    queue:
+      default_backend: "rabbitmq"
+      message_persistence: true
+      dead_letter_queues: true
+      retry_mechanisms: true
+      priority_queues: true
+    backends:
+      rabbitmq:
+        enabled: true
+        connection_pool_size: 10
+        prefetch_count: 100
+        durability: true
+      redis:
+        enabled: true
+        connection_pool_size: 20
+        stream_support: true
+        persistence: true
+      kafka:
+        enabled: true
+        producer_acks: "all"
+        consumer_group_id: "002aic-consumers"
+        partition_strategy: "round_robin"
+    queue_types:
+      - name: "fifo"
+        backend: "rabbitmq"
+        ordering_guaranteed: true
+        deduplication: true
+      - name: "priority"
+        backend: "rabbitmq"
+        priority_levels: 10
+        max_priority: 255
+      - name: "delay"
+        backend: "rabbitmq"
+        delay_support: true
+        max_delay: "24h"
+      - name: "stream"
+        backend: "kafka"
+        partitioning: true
+        retention: "7d"
+    message_patterns:
+      - name: "task_queue"
+        queue_type: "fifo"
+        retry_attempts: 3
+        retry_delay: "30s"
+        dead_letter_enabled: true
+      - name: "event_stream"
+        queue_type: "stream"
+        partitions: 3
+        replication_factor: 2
+      - name: "notification_queue"
+        queue_type: "priority"
+        priority_levels: 5
+        batch_processing: true
+    processing:
+      max_concurrent_consumers: 50
+      batch_size: 10
+      processing_timeout: 300
+      error_handling: "retry_with_backoff"
+    monitoring:
+      queue_metrics: true
+      message_tracking: true
+      consumer_metrics: true
+      latency_tracking: true
+    features:
+      message_deduplication: true
+      message_compression: true
+      message_encryption: false
+      batch_operations: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

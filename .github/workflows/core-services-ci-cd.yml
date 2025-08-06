@@ -1,0 +1,367 @@
+name: Core Services CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/backend-services/auth-service/**'
+      - 'apps/backend-services/configuration-service/**'
+      - 'apps/backend-services/service-discovery/**'
+      - 'apps/backend-services/health-check-service/**'
+      - 'apps/backend-services/api-gateway-service/**'
+      - 'infra/k8s/core-services/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/backend-services/auth-service/**'
+      - 'apps/backend-services/configuration-service/**'
+      - 'apps/backend-services/service-discovery/**'
+      - 'apps/backend-services/health-check-service/**'
+      - 'apps/backend-services/api-gateway-service/**'
+      - 'infra/k8s/core-services/**'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: 002aic
+
+jobs:
+  # Detect which services changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth-service: ${{ steps.changes.outputs.auth-service }}
+      configuration-service: ${{ steps.changes.outputs.configuration-service }}
+      service-discovery: ${{ steps.changes.outputs.service-discovery }}
+      health-check-service: ${{ steps.changes.outputs.health-check-service }}
+      api-gateway-service: ${{ steps.changes.outputs.api-gateway-service }}
+      k8s-manifests: ${{ steps.changes.outputs.k8s-manifests }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          auth-service:
+            - 'apps/backend-services/auth-service/**'
+          configuration-service:
+            - 'apps/backend-services/configuration-service/**'
+          service-discovery:
+            - 'apps/backend-services/service-discovery/**'
+          health-check-service:
+            - 'apps/backend-services/health-check-service/**'
+          api-gateway-service:
+            - 'apps/backend-services/api-gateway-service/**'
+          k8s-manifests:
+            - 'infra/k8s/core-services/**'
+
+  # Security scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.auth-service == 'true' ||
+      needs.detect-changes.outputs.configuration-service == 'true' ||
+      needs.detect-changes.outputs.service-discovery == 'true' ||
+      needs.detect-changes.outputs.health-check-service == 'true' ||
+      needs.detect-changes.outputs.api-gateway-service == 'true'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Build and test Go services
+  build-go-services:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.auth-service == 'true' ||
+      needs.detect-changes.outputs.configuration-service == 'true' ||
+      needs.detect-changes.outputs.service-discovery == 'true' ||
+      needs.detect-changes.outputs.api-gateway-service == 'true'
+    strategy:
+      matrix:
+        service: [auth-service, configuration-service, service-discovery, api-gateway-service]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Check if service changed
+      id: check-service
+      run: |
+        if [ "${{ needs.detect-changes.outputs[matrix.service] }}" == "true" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Cache Go modules
+      if: steps.check-service.outputs.changed == 'true'
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: go mod download
+    
+    - name: Run tests
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: go test -v -race -coverprofile=coverage.out ./...
+    
+    - name: Upload coverage reports
+      if: steps.check-service.outputs.changed == 'true'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/backend-services/${{ matrix.service }}/coverage.out
+        flags: ${{ matrix.service }}
+    
+    - name: Build binary
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+    
+    - name: Build Docker image
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} .
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest .
+    
+    - name: Log in to Container Registry
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Push Docker image
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  # Build and test Node.js services
+  build-node-services:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.health-check-service == 'true'
+    strategy:
+      matrix:
+        service: [health-check-service]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: ./apps/backend-services/${{ matrix.service }}/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: npm ci
+    
+    - name: Run linting
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: npm run lint
+    
+    - name: Run tests
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: npm test
+    
+    - name: Build Docker image
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} .
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest .
+    
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  # Integration tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [build-go-services, build-node-services]
+    if: always() && (needs.build-go-services.result == 'success' || needs.build-node-services.result == 'success')
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Run integration tests
+      working-directory: ./test/integration
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db?sslmode=disable
+        REDIS_URL: redis://localhost:6379
+      run: |
+        go test -v ./core-services/...
+
+  # Deploy to staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-go-services, build-node-services, integration-tests]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/develop' &&
+      (needs.build-go-services.result == 'success' || needs.build-node-services.result == 'success') &&
+      needs.integration-tests.result == 'success'
+    environment: staging
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Update image tags in manifests
+      run: |
+        sed -i "s|002aic/auth-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/auth-service:${{ github.sha }}|g" infra/k8s/core-services/auth-service.yaml
+        sed -i "s|002aic/configuration-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/configuration-service:${{ github.sha }}|g" infra/k8s/core-services/configuration-service.yaml
+        sed -i "s|002aic/service-discovery:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/service-discovery:${{ github.sha }}|g" infra/k8s/core-services/service-discovery.yaml
+        sed -i "s|002aic/health-check-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/health-check-service:${{ github.sha }}|g" infra/k8s/core-services/health-check-service.yaml
+        sed -i "s|002aic/api-gateway-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway-service:${{ github.sha }}|g" infra/k8s/core-services/api-gateway-service.yaml
+    
+    - name: Deploy to staging
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f infra/k8s/core-services/ -n aic-platform-staging
+        kubectl rollout status deployment/auth-service -n aic-platform-staging --timeout=300s
+        kubectl rollout status deployment/configuration-service -n aic-platform-staging --timeout=300s
+        kubectl rollout status deployment/service-discovery -n aic-platform-staging --timeout=300s
+        kubectl rollout status deployment/health-check-service -n aic-platform-staging --timeout=300s
+        kubectl rollout status deployment/api-gateway-service -n aic-platform-staging --timeout=300s
+
+  # Deploy to production
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-go-services, build-node-services, integration-tests]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/main' &&
+      (needs.build-go-services.result == 'success' || needs.build-node-services.result == 'success') &&
+      needs.integration-tests.result == 'success'
+    environment: production
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Update image tags in manifests
+      run: |
+        sed -i "s|002aic/auth-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/auth-service:${{ github.sha }}|g" infra/k8s/core-services/auth-service.yaml
+        sed -i "s|002aic/configuration-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/configuration-service:${{ github.sha }}|g" infra/k8s/core-services/configuration-service.yaml
+        sed -i "s|002aic/service-discovery:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/service-discovery:${{ github.sha }}|g" infra/k8s/core-services/service-discovery.yaml
+        sed -i "s|002aic/health-check-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/health-check-service:${{ github.sha }}|g" infra/k8s/core-services/health-check-service.yaml
+        sed -i "s|002aic/api-gateway-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway-service:${{ github.sha }}|g" infra/k8s/core-services/api-gateway-service.yaml
+    
+    - name: Deploy to production
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f infra/k8s/core-services/ -n aic-platform
+        kubectl rollout status deployment/auth-service -n aic-platform --timeout=300s
+        kubectl rollout status deployment/configuration-service -n aic-platform --timeout=300s
+        kubectl rollout status deployment/service-discovery -n aic-platform --timeout=300s
+        kubectl rollout status deployment/health-check-service -n aic-platform --timeout=300s
+        kubectl rollout status deployment/api-gateway-service -n aic-platform --timeout=300s
+    
+    - name: Run smoke tests
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Wait for services to be ready
+        sleep 30
+        
+        # Get API Gateway external IP
+        GATEWAY_IP=$(kubectl get service api-gateway-service -n aic-platform -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Run basic health checks
+        curl -f http://$GATEWAY_IP/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/auth/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/config/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/discovery/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/health-check/health || exit 1
+
+  # Notify on completion
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow

@@ -1,0 +1,231 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  namespace: aic-data
+  labels:
+    app: analytics-service
+    tier: data
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: analytics-service
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+        tier: data
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: analytics-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: analytics-service
+        image: 002aic/analytics-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: analytics-db-url
+        - name: CLICKHOUSE_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: clickhouse-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-redis-secret
+              key: url
+        - name: ELASTICSEARCH_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: elasticsearch-url
+        - name: DATA_MANAGEMENT_SERVICE_URL
+          value: "http://data-management-service.aic-data.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: SPARK_MASTER_URL
+          value: "spark://spark-master:7077"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: analytics-storage
+          mountPath: /app/data
+        - name: cache-storage
+          mountPath: /app/cache
+      volumes:
+      - name: config
+        configMap:
+          name: analytics-service-config
+      - name: analytics-storage
+        persistentVolumeClaim:
+          claimName: analytics-pvc
+      - name: cache-storage
+        persistentVolumeClaim:
+          claimName: analytics-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: aic-data
+  labels:
+    app: analytics-service
+    tier: data
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: analytics-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: analytics-service
+  namespace: aic-data
+  labels:
+    app: analytics-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: analytics-pvc
+  namespace: aic-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: analytics-cache-pvc
+  namespace: aic-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+  namespace: aic-data
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    analytics:
+      real_time_processing: true
+      batch_processing: true
+      streaming_window_size: "5m"
+      batch_interval: "1h"
+      max_concurrent_queries: 10
+      query_timeout: 300s
+    data_sources:
+      postgresql:
+        enabled: true
+        connection_pool_size: 20
+      clickhouse:
+        enabled: true
+        connection_pool_size: 10
+        batch_size: 100000
+      elasticsearch:
+        enabled: true
+        connection_pool_size: 5
+        index_prefix: "002aic-analytics"
+    processing_engines:
+      spark:
+        enabled: true
+        executor_memory: "2g"
+        executor_cores: 2
+        max_executors: 5
+      pandas:
+        enabled: true
+        chunk_size: 50000
+      dask:
+        enabled: true
+        scheduler_address: "dask-scheduler:8786"
+    caching:
+      enabled: true
+      cache_path: "/app/cache"
+      ttl: 3600s
+      max_cache_size: "10GB"
+    dashboards:
+      enabled: true
+      auto_refresh: true
+      refresh_interval: 300s
+      max_dashboard_widgets: 50
+    alerts:
+      enabled: true
+      check_interval: 60s
+      notification_channels: ["email", "slack", "webhook"]
+    compliance:
+      data_anonymization: true
+      audit_queries: true
+      gdpr_compliance: true
+    storage:
+      data_path: "/app/data"
+      cache_path: "/app/cache"
+    logging:
+      level: info
+      format: json

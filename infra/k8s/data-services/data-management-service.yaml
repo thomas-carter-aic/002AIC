@@ -1,0 +1,210 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-management-service
+  namespace: aic-data
+  labels:
+    app: data-management-service
+    tier: data
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: data-management-service
+  template:
+    metadata:
+      labels:
+        app: data-management-service
+        tier: data
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: data-management-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: data-management-service
+        image: 002aic/data-management-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: data-management-db-url
+        - name: MONGODB_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: mongodb-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-redis-secret
+              key: url
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: data-storage-secret
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: data-storage-secret
+              key: s3-secret-key
+        - name: S3_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: data-storage-secret
+              key: s3-bucket
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: DATA_ENCRYPTION_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: data-storage
+          mountPath: /app/data
+        - name: temp-storage
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: data-management-service-config
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: data-management-pvc
+      - name: temp-storage
+        emptyDir:
+          sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-management-service
+  namespace: aic-data
+  labels:
+    app: data-management-service
+    tier: data
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: data-management-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-management-service
+  namespace: aic-data
+  labels:
+    app: data-management-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-management-pvc
+  namespace: aic-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-management-service-config
+  namespace: aic-data
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    data_management:
+      max_file_size: "100MB"
+      supported_formats: ["json", "csv", "parquet", "avro", "orc"]
+      compression_enabled: true
+      encryption_at_rest: true
+      versioning_enabled: true
+      max_versions: 10
+    storage:
+      primary_backend: "s3"
+      backup_backend: "local"
+      data_path: "/app/data"
+      temp_path: "/tmp"
+      cleanup_interval: 3600s
+    databases:
+      postgresql:
+        enabled: true
+        connection_pool_size: 20
+        max_idle_connections: 5
+      mongodb:
+        enabled: true
+        connection_pool_size: 10
+        max_idle_connections: 2
+    processing:
+      batch_size: 10000
+      max_concurrent_jobs: 5
+      job_timeout: 3600s
+      retry_attempts: 3
+    compliance:
+      gdpr_enabled: true
+      hipaa_enabled: true
+      audit_logging: true
+      data_lineage: true
+    monitoring:
+      metrics_enabled: true
+      health_check_interval: 30s
+    logging:
+      level: info
+      format: json

@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-tuning-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-tuning-service
+    tier: ai-ml
+    version: v1.0.0
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: model-tuning-service
+  template:
+    metadata:
+      labels:
+        app: model-tuning-service
+        tier: ai-ml
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: model-tuning-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: model-tuning-service
+        image: 002aic/model-tuning-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-database-secret
+              key: tuning-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-redis-secret
+              key: url
+        - name: MLFLOW_TRACKING_URI
+          value: "http://mlflow-service.aic-ai-ml.svc.cluster.local:5000"
+        - name: MODEL_REGISTRY_URL
+          value: "http://model-registry-service.aic-platform.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: model-storage
+          mountPath: /app/models
+        - name: tuning-storage
+          mountPath: /app/tuning
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: config
+        configMap:
+          name: model-tuning-service-config
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-tuning-pvc
+      - name: tuning-storage
+        persistentVolumeClaim:
+          claimName: tuning-data-pvc
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      nodeSelector:
+        accelerator: nvidia-tesla-gpu
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-tuning-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-tuning-service
+    tier: ai-ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: model-tuning-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-tuning-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-tuning-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-tuning-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tuning-data-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-tuning-service-config
+  namespace: aic-ai-ml
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 300s
+    tuning:
+      max_concurrent_jobs: 2
+      job_timeout: 3600s
+      hyperparameter_optimization: true
+      early_stopping: true
+    optimization:
+      algorithms: ["bayesian", "grid_search", "random_search"]
+      max_trials: 100
+      objective_metric: "accuracy"
+    frameworks:
+      optuna:
+        enabled: true
+        version: "3.3"
+      hyperopt:
+        enabled: true
+        version: "0.2"
+    storage:
+      model_path: "/app/models"
+      tuning_path: "/app/tuning"
+    logging:
+      level: info
+      format: json

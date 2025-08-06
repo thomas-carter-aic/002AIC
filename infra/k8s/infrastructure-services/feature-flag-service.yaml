@@ -1,0 +1,233 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feature-flag-service
+  namespace: aic-infrastructure
+  labels:
+    app: feature-flag-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: feature-flag-service
+  template:
+    metadata:
+      labels:
+        app: feature-flag-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: feature-flag-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: feature-flag-service
+        image: 002aic/feature-flag-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: feature-flag-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: feature-flag-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: feature-flag-service-config
+      - name: feature-flag-storage
+        persistentVolumeClaim:
+          claimName: feature-flag-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: feature-flag-service
+  namespace: aic-infrastructure
+  labels:
+    app: feature-flag-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: feature-flag-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: feature-flag-service
+  namespace: aic-infrastructure
+  labels:
+    app: feature-flag-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: feature-flag-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feature-flag-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    feature_flags:
+      real_time_updates: true
+      caching_enabled: true
+      cache_ttl: 300
+      evaluation_logging: true
+      a_b_testing: true
+    flag_types:
+      - name: "boolean"
+        description: "Simple on/off flags"
+        default_value: false
+      - name: "string"
+        description: "String value flags"
+        default_value: ""
+      - name: "number"
+        description: "Numeric value flags"
+        default_value: 0
+      - name: "json"
+        description: "Complex JSON object flags"
+        default_value: "{}"
+    targeting:
+      user_targeting: true
+      segment_targeting: true
+      percentage_rollouts: true
+      geographic_targeting: true
+      device_targeting: true
+    segments:
+      - name: "beta_users"
+        description: "Users in beta program"
+        conditions:
+          - attribute: "user_type"
+            operator: "equals"
+            value: "beta"
+      - name: "enterprise_customers"
+        description: "Enterprise tier customers"
+        conditions:
+          - attribute: "subscription_tier"
+            operator: "equals"
+            value: "enterprise"
+      - name: "power_users"
+        description: "High usage users"
+        conditions:
+          - attribute: "api_calls_per_month"
+            operator: "greater_than"
+            value: 100000
+    experiments:
+      enabled: true
+      statistical_significance: true
+      minimum_sample_size: 1000
+      confidence_level: 0.95
+      experiment_duration_days: 14
+    rollout_strategies:
+      - name: "gradual"
+        description: "Gradual percentage rollout"
+        steps: [1, 5, 10, 25, 50, 100]
+        step_duration: "24h"
+      - name: "canary"
+        description: "Canary deployment pattern"
+        steps: [1, 10, 100]
+        step_duration: "1h"
+      - name: "blue_green"
+        description: "Blue-green deployment"
+        steps: [0, 100]
+        step_duration: "0h"
+    monitoring:
+      flag_evaluation_metrics: true
+      performance_metrics: true
+      error_tracking: true
+      usage_analytics: true
+    integrations:
+      analytics:
+        enabled: true
+        providers: ["google_analytics", "mixpanel"]
+      monitoring:
+        enabled: true
+        providers: ["prometheus", "datadog"]
+      ci_cd:
+        enabled: true
+        providers: ["github_actions", "jenkins"]
+    security:
+      api_key_authentication: true
+      role_based_access: true
+      audit_logging: true
+      flag_approval_workflow: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

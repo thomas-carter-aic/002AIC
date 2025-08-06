@@ -1,0 +1,256 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup-service
+  namespace: aic-infrastructure
+  labels:
+    app: backup-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: backup-service
+  template:
+    metadata:
+      labels:
+        app: backup-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: backup-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: backup-service
+        image: 002aic/backup-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: backup-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-backup-secret
+              key: s3-access-key
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-backup-secret
+              key: s3-secret-key
+        - name: S3_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-backup-secret
+              key: s3-bucket
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-backup-secret
+              key: encryption-key
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: backup-storage
+          mountPath: /app/data
+        - name: temp-storage
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: backup-service-config
+      - name: backup-storage
+        persistentVolumeClaim:
+          claimName: backup-pvc
+      - name: temp-storage
+        emptyDir:
+          sizeLimit: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backup-service
+  namespace: aic-infrastructure
+  labels:
+    app: backup-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: backup-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-service
+  namespace: aic-infrastructure
+  labels:
+    app: backup-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 300s
+    backup:
+      schedule_enabled: true
+      compression_enabled: true
+      encryption_enabled: true
+      deduplication_enabled: true
+      verification_enabled: true
+      retention_policy: true
+    schedules:
+      databases:
+        frequency: "daily"
+        time: "02:00"
+        retention_days: 30
+        full_backup_frequency: "weekly"
+      files:
+        frequency: "daily"
+        time: "03:00"
+        retention_days: 90
+        incremental: true
+      configurations:
+        frequency: "hourly"
+        retention_days: 7
+      logs:
+        frequency: "daily"
+        time: "01:00"
+        retention_days: 365
+    storage:
+      primary_backend: "s3"
+      backup_backend: "local"
+      encryption_algorithm: "AES-256"
+      compression_algorithm: "gzip"
+      chunk_size: "64MB"
+    sources:
+      databases:
+        - name: "postgresql"
+          connection: "postgresql://postgres:password@postgresql-service.aic-platform:5432"
+          databases: ["all"]
+          backup_type: "logical"
+        - name: "mongodb"
+          connection: "mongodb://admin:password@mongodb-service.aic-data:27017"
+          databases: ["all"]
+          backup_type: "mongodump"
+        - name: "redis"
+          connection: "redis://redis-service.aic-platform:6379"
+          backup_type: "rdb"
+      kubernetes:
+        - name: "manifests"
+          namespaces: ["aic-platform", "aic-ai-ml", "aic-data", "aic-devops", "aic-business", "aic-infrastructure"]
+          resources: ["all"]
+        - name: "secrets"
+          namespaces: ["all"]
+          encryption_required: true
+        - name: "configmaps"
+          namespaces: ["all"]
+      files:
+        - name: "application_data"
+          paths: ["/app/data"]
+          exclude_patterns: ["*.tmp", "*.log"]
+        - name: "user_uploads"
+          paths: ["/uploads"]
+          include_patterns: ["*"]
+    restoration:
+      point_in_time_recovery: true
+      selective_restore: true
+      cross_region_restore: true
+      automated_testing: true
+    monitoring:
+      backup_metrics: true
+      success_rate_tracking: true
+      storage_usage_monitoring: true
+      performance_monitoring: true
+    notifications:
+      success_notifications: false
+      failure_notifications: true
+      summary_reports: true
+      channels: ["email", "slack"]
+    compliance:
+      audit_logging: true
+      retention_compliance: true
+      encryption_compliance: true
+      access_logging: true
+    storage:
+      data_path: "/app/data"
+      temp_path: "/tmp"
+    logging:
+      level: info
+      format: json

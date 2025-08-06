@@ -1,0 +1,163 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: aic-data
+  labels:
+    app: mongodb
+    tier: database
+spec:
+  serviceName: mongodb-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+        tier: database
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        ports:
+        - containerPort: 27017
+          name: mongodb
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: "admin"
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: root-password
+        - name: MONGO_INITDB_DATABASE
+          value: "002aic_data"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: mongodb-storage
+          mountPath: /data/db
+        - name: mongodb-config
+          mountPath: /data/configdb
+        - name: mongodb-init
+          mountPath: /docker-entrypoint-initdb.d
+        livenessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - "db.adminCommand('ping')"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - mongosh
+            - --eval
+            - "db.adminCommand('ping')"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: mongodb-init
+        configMap:
+          name: mongodb-init-scripts
+  volumeClaimTemplates:
+  - metadata:
+      name: mongodb-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+  - metadata:
+      name: mongodb-config
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: aic-data
+  labels:
+    app: mongodb
+    tier: database
+spec:
+  type: ClusterIP
+  ports:
+  - port: 27017
+    targetPort: 27017
+    protocol: TCP
+    name: mongodb
+  selector:
+    app: mongodb
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-secret
+  namespace: aic-data
+type: Opaque
+data:
+  # Base64 encoded password - replace with secure value
+  root-password: bW9uZ29kYi1wYXNzd29yZA==
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-init-scripts
+  namespace: aic-data
+data:
+  01-create-users.js: |
+    // Create databases and users for data services
+    db = db.getSiblingDB('user_management_db');
+    db.createUser({
+      user: 'user_management_user',
+      pwd: 'user_management_password',
+      roles: [{ role: 'readWrite', db: 'user_management_db' }]
+    });
+    
+    db = db.getSiblingDB('data_management_db');
+    db.createUser({
+      user: 'data_management_user',
+      pwd: 'data_management_password',
+      roles: [{ role: 'readWrite', db: 'data_management_db' }]
+    });
+    
+    db = db.getSiblingDB('analytics_db');
+    db.createUser({
+      user: 'analytics_user',
+      pwd: 'analytics_password',
+      roles: [{ role: 'readWrite', db: 'analytics_db' }]
+    });
+    
+    // Create collections with indexes
+    db = db.getSiblingDB('user_management_db');
+    db.users.createIndex({ "email": 1 }, { unique: true });
+    db.users.createIndex({ "organization_id": 1 });
+    db.user_sessions.createIndex({ "expires_at": 1 }, { expireAfterSeconds: 0 });
+    
+    db = db.getSiblingDB('data_management_db');
+    db.datasets.createIndex({ "name": 1, "organization_id": 1 }, { unique: true });
+    db.datasets.createIndex({ "created_at": -1 });
+    db.data_lineage.createIndex({ "dataset_id": 1 });
+    
+    db = db.getSiblingDB('analytics_db');
+    db.reports.createIndex({ "organization_id": 1, "created_at": -1 });
+    db.dashboards.createIndex({ "organization_id": 1, "name": 1 });
+    db.metrics.createIndex({ "timestamp": -1 });
+    db.metrics.createIndex({ "metric_name": 1, "timestamp": -1 });

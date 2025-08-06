@@ -1,0 +1,268 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-service
+  namespace: aic-infrastructure
+  labels:
+    app: metrics-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: metrics-service
+  template:
+    metadata:
+      labels:
+        app: metrics-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: metrics-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: metrics-service
+        image: 002aic/metrics-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: metrics-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: PROMETHEUS_URL
+          value: "http://prometheus-service.aic-monitoring.svc.cluster.local:9090"
+        - name: INFLUXDB_URL
+          value: "http://influxdb-service.aic-infrastructure.svc.cluster.local:8086"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: metrics-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: metrics-service-config
+      - name: metrics-storage
+        persistentVolumeClaim:
+          claimName: metrics-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-service
+  namespace: aic-infrastructure
+  labels:
+    app: metrics-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: metrics-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metrics-service
+  namespace: aic-infrastructure
+  labels:
+    app: metrics-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metrics-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metrics-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    metrics:
+      collection_enabled: true
+      aggregation_enabled: true
+      real_time_processing: true
+      batch_processing: true
+      retention_days: 90
+    collectors:
+      prometheus:
+        enabled: true
+        scrape_interval: 15
+        scrape_timeout: 10
+        metrics_path: "/metrics"
+      influxdb:
+        enabled: true
+        batch_size: 1000
+        flush_interval: 10
+      custom:
+        enabled: true
+        http_endpoint: "/metrics/custom"
+        authentication: true
+    metric_types:
+      - name: "counter"
+        description: "Monotonically increasing values"
+        aggregation: "sum"
+      - name: "gauge"
+        description: "Point-in-time values"
+        aggregation: "last"
+      - name: "histogram"
+        description: "Distribution of values"
+        aggregation: "percentiles"
+      - name: "summary"
+        description: "Summary statistics"
+        aggregation: "quantiles"
+    business_metrics:
+      - name: "revenue"
+        type: "gauge"
+        unit: "USD"
+        tags: ["subscription_tier", "region"]
+      - name: "active_users"
+        type: "gauge"
+        unit: "count"
+        tags: ["user_type", "subscription_tier"]
+      - name: "api_requests"
+        type: "counter"
+        unit: "requests"
+        tags: ["service", "endpoint", "status_code"]
+      - name: "model_predictions"
+        type: "counter"
+        unit: "predictions"
+        tags: ["model_name", "model_version"]
+    technical_metrics:
+      - name: "response_time"
+        type: "histogram"
+        unit: "seconds"
+        tags: ["service", "endpoint"]
+      - name: "error_rate"
+        type: "gauge"
+        unit: "percentage"
+        tags: ["service", "error_type"]
+      - name: "cpu_usage"
+        type: "gauge"
+        unit: "percentage"
+        tags: ["service", "pod"]
+      - name: "memory_usage"
+        type: "gauge"
+        unit: "bytes"
+        tags: ["service", "pod"]
+    aggregation:
+      time_windows: ["1m", "5m", "15m", "1h", "1d"]
+      functions: ["sum", "avg", "min", "max", "count", "rate"]
+      grouping: ["service", "region", "user_type"]
+    alerting:
+      enabled: true
+      rules:
+        - name: "high_error_rate"
+          condition: "error_rate > 5%"
+          duration: "5m"
+          severity: "warning"
+        - name: "revenue_drop"
+          condition: "revenue < previous_day * 0.8"
+          duration: "1h"
+          severity: "critical"
+        - name: "api_latency_high"
+          condition: "response_time_p95 > 1s"
+          duration: "10m"
+          severity: "warning"
+    dashboards:
+      business:
+        - name: "Revenue Dashboard"
+          metrics: ["revenue", "active_users", "conversion_rate"]
+          refresh_interval: "5m"
+        - name: "User Engagement"
+          metrics: ["active_users", "session_duration", "feature_usage"]
+          refresh_interval: "1m"
+      technical:
+        - name: "Service Performance"
+          metrics: ["response_time", "error_rate", "throughput"]
+          refresh_interval: "30s"
+        - name: "Infrastructure Health"
+          metrics: ["cpu_usage", "memory_usage", "disk_usage"]
+          refresh_interval: "1m"
+    exports:
+      prometheus:
+        enabled: true
+        endpoint: "/metrics/prometheus"
+        format: "prometheus"
+      json:
+        enabled: true
+        endpoint: "/metrics/json"
+        format: "json"
+      csv:
+        enabled: true
+        endpoint: "/metrics/csv"
+        format: "csv"
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

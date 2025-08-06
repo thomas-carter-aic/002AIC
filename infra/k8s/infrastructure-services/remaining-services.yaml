@@ -1,0 +1,232 @@
+# Model Registry Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-registry-service
+  namespace: aic-infrastructure
+  labels:
+    app: model-registry-service
+    tier: infrastructure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: model-registry-service
+  template:
+    metadata:
+      labels:
+        app: model-registry-service
+        tier: infrastructure
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: model-registry-service
+        image: 002aic/model-registry-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: model-registry-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-registry-service
+  namespace: aic-infrastructure
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: model-registry-service
+---
+# Event Streaming Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-streaming-service
+  namespace: aic-infrastructure
+  labels:
+    app: event-streaming-service
+    tier: infrastructure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: event-streaming-service
+  template:
+    metadata:
+      labels:
+        app: event-streaming-service
+        tier: infrastructure
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: event-streaming-service
+        image: 002aic/event-streaming-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: event-streaming-db-url
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-streaming-service
+  namespace: aic-infrastructure
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: event-streaming-service
+---
+# Recommendation Engine Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendation-engine-service
+  namespace: aic-infrastructure
+  labels:
+    app: recommendation-engine-service
+    tier: infrastructure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: recommendation-engine-service
+  template:
+    metadata:
+      labels:
+        app: recommendation-engine-service
+        tier: infrastructure
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: recommendation-engine-service
+        image: 002aic/recommendation-engine-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: recommendation-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendation-engine-service
+  namespace: aic-infrastructure
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: recommendation-engine-service
+---
+# Content Management Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: content-management-service
+  namespace: aic-infrastructure
+  labels:
+    app: content-management-service
+    tier: infrastructure
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: content-management-service
+  template:
+    metadata:
+      labels:
+        app: content-management-service
+        tier: infrastructure
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: content-management-service
+        image: 002aic/content-management-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: content-management-db-url
+        - name: S3_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-storage-secret
+              key: s3-bucket
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: content-management-service
+  namespace: aic-infrastructure
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: content-management-service

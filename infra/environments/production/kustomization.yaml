@@ -1,0 +1,107 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configurations
+resources:
+  - ../../k8s/namespaces/
+  - ../../k8s/core-platform/
+  - ../../k8s/ai-ml-services/
+  - ../../k8s/data-services/
+  - ../../k8s/devops-services/
+  - ../../k8s/business-services/
+  - ../../k8s/infrastructure-services/
+
+# Production-specific patches
+patchesStrategicMerge:
+  - patches/production-replicas.yaml
+  - patches/production-resources.yaml
+  - patches/production-security.yaml
+  - patches/production-monitoring.yaml
+
+# Additional resources for production
+resources:
+  - patches/production-hpa.yaml
+
+# Common labels for production environment
+commonLabels:
+  environment: production
+  version: v1.0.0
+  managed-by: kustomize
+
+# Namespace prefix for production
+namespace: ""
+
+# Image transformations for production
+images:
+  - name: auth-service
+    newTag: v1.0.0-prod
+  - name: api-gateway-service
+    newTag: v1.0.0-prod
+  - name: user-management-service
+    newTag: v1.0.0-prod
+  - name: billing-service
+    newTag: v1.0.0-prod
+  - name: model-training-service
+    newTag: v1.0.0-prod
+  - name: model-inference-service
+    newTag: v1.0.0-prod
+  - name: data-ingestion-service
+    newTag: v1.0.0-prod
+  - name: workflow-orchestration-service
+    newTag: v1.0.0-prod
+  - name: notification-service
+    newTag: v1.0.0-prod
+  - name: monitoring-service
+    newTag: v1.0.0-prod
+
+# Configuration transformations
+configMapGenerator:
+  - name: production-config
+    literals:
+      - LOG_LEVEL=info
+      - ENVIRONMENT=production
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - CACHE_TTL=3600
+      - MAX_CONNECTIONS=1000
+      - RATE_LIMIT=10000
+      - BACKUP_ENABLED=true
+      - ENCRYPTION_ENABLED=true
+      - COMPLIANCE_MODE=strict
+
+# Secret transformations (references to external secret management)
+secretGenerator:
+  - name: production-secrets
+    literals:
+      - DATABASE_URL=postgresql://prod-user:REDACTED@prod-db:5432/nexus_prod
+      - REDIS_URL=redis://prod-redis:6379/0
+      - JWT_SECRET=REDACTED
+      - API_KEY=REDACTED
+      - ENCRYPTION_KEY=REDACTED
+
+# Replica transformations
+replicas:
+  - name: auth-service
+    count: 5
+  - name: api-gateway-service
+    count: 5
+  - name: user-management-service
+    count: 5
+  - name: billing-service
+    count: 5
+  - name: notification-service
+    count: 5
+  - name: health-check-service
+    count: 3
+  - name: monitoring-service
+    count: 3
+  - name: analytics-service
+    count: 3
+  - name: model-training-service
+    count: 2
+  - name: model-inference-service
+    count: 3
+  - name: data-ingestion-service
+    count: 3
+  - name: workflow-orchestration-service
+    count: 2

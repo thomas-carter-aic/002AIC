@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-ai-ml-init-scripts
+  namespace: aic-platform
+data:
+  02-create-ai-ml-databases.sql: |
+    -- Create databases for AI/ML services
+    CREATE DATABASE agent_db;
+    CREATE DATABASE training_db;
+    CREATE DATABASE tuning_db;
+    CREATE DATABASE deployment_db;
+    CREATE DATABASE data_integration_db;
+    CREATE DATABASE pipeline_db;
+    CREATE DATABASE mlflow_db;
+    
+    -- Create users for AI/ML services
+    CREATE USER agent_user WITH PASSWORD 'agent_password';
+    CREATE USER training_user WITH PASSWORD 'training_password';
+    CREATE USER tuning_user WITH PASSWORD 'tuning_password';
+    CREATE USER deployment_user WITH PASSWORD 'deployment_password';
+    CREATE USER data_integration_user WITH PASSWORD 'data_integration_password';
+    CREATE USER pipeline_user WITH PASSWORD 'pipeline_password';
+    CREATE USER mlflow_user WITH PASSWORD 'mlflow_password';
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON DATABASE agent_db TO agent_user;
+    GRANT ALL PRIVILEGES ON DATABASE training_db TO training_user;
+    GRANT ALL PRIVILEGES ON DATABASE tuning_db TO tuning_user;
+    GRANT ALL PRIVILEGES ON DATABASE deployment_db TO deployment_user;
+    GRANT ALL PRIVILEGES ON DATABASE data_integration_db TO data_integration_user;
+    GRANT ALL PRIVILEGES ON DATABASE pipeline_db TO pipeline_user;
+    GRANT ALL PRIVILEGES ON DATABASE mlflow_db TO mlflow_user;
+    
+    -- Create extensions for AI/ML workloads
+    \c agent_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    \c training_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c tuning_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c deployment_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c data_integration_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    \c pipeline_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c mlflow_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

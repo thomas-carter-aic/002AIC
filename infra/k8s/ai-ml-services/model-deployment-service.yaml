@@ -1,0 +1,199 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-deployment-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-deployment-service
+    tier: ai-ml
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: model-deployment-service
+  template:
+    metadata:
+      labels:
+        app: model-deployment-service
+        tier: ai-ml
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: model-deployment-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: model-deployment-service
+        image: 002aic/model-deployment-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-database-secret
+              key: deployment-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-redis-secret
+              key: url
+        - name: MODEL_REGISTRY_URL
+          value: "http://model-registry-service.aic-platform.svc.cluster.local"
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: model-storage
+          mountPath: /app/models
+      volumes:
+      - name: config
+        configMap:
+          name: model-deployment-service-config
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-deployment-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-deployment-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-deployment-service
+    tier: ai-ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: model-deployment-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-deployment-service
+  namespace: aic-ai-ml
+  labels:
+    app: model-deployment-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: model-deployment-service
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: model-deployment-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: model-deployment-service
+subjects:
+- kind: ServiceAccount
+  name: model-deployment-service
+  namespace: aic-ai-ml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-deployment-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-deployment-service-config
+  namespace: aic-ai-ml
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    deployment:
+      max_concurrent_deployments: 10
+      deployment_timeout: 600s
+      auto_scaling: true
+      health_check_interval: 30s
+    serving:
+      frameworks: ["tensorflow", "pytorch", "onnx", "scikit-learn"]
+      default_replicas: 2
+      max_replicas: 10
+      cpu_threshold: 70
+      memory_threshold: 80
+    monitoring:
+      metrics_enabled: true
+      logging_enabled: true
+      tracing_enabled: true
+    storage:
+      model_path: "/app/models"
+    logging:
+      level: info
+      format: json

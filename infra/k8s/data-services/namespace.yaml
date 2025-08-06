@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aic-data
+  labels:
+    name: aic-data
+    environment: production
+    platform: 002aic
+    tier: data
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: data-resource-quota
+  namespace: aic-data
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+    persistentvolumeclaims: "6"
+    services.loadbalancers: "2"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: data-limit-range
+  namespace: aic-data
+spec:
+  limits:
+  - default:
+      cpu: "1"
+      memory: "2Gi"
+    defaultRequest:
+      cpu: "250m"
+      memory: "512Mi"
+    type: Container

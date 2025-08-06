@@ -1,0 +1,271 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: support-service
+  namespace: aic-business
+  labels:
+    app: support-service
+    tier: business
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: support-service
+  template:
+    metadata:
+      labels:
+        app: support-service
+        tier: business
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: support-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: support-service
+        image: 002aic/support-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-database-secret
+              key: support-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-redis-secret
+              key: url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service.aic-data.svc.cluster.local:9200"
+        - name: ZENDESK_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: business-support-secret
+              key: zendesk-api-token
+        - name: INTERCOM_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: business-support-secret
+              key: intercom-access-token
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: business-support-secret
+              key: openai-api-key
+        - name: USER_MANAGEMENT_SERVICE_URL
+          value: "http://user-management-service.aic-data.svc.cluster.local"
+        - name: NOTIFICATION_SERVICE_URL
+          value: "http://notification-service.aic-platform.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: support-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: support-service-config
+      - name: support-storage
+        persistentVolumeClaim:
+          claimName: support-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: support-service
+  namespace: aic-business
+  labels:
+    app: support-service
+    tier: business
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: support-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: support-service
+  namespace: aic-business
+  labels:
+    app: support-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: support-pvc
+  namespace: aic-business
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: support-service-config
+  namespace: aic-business
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    support:
+      ticket_auto_assignment: true
+      sla_management: true
+      escalation_rules: true
+      business_hours: "9:00-17:00 UTC"
+      response_time_targets:
+        critical: "1h"
+        high: "4h"
+        medium: "24h"
+        low: "72h"
+    channels:
+      email:
+        enabled: true
+        auto_reply: true
+        spam_filtering: true
+      chat:
+        enabled: true
+        business_hours_only: false
+        queue_management: true
+      phone:
+        enabled: false
+        ivr_integration: false
+      social:
+        enabled: true
+        platforms: ["twitter", "facebook", "linkedin"]
+    ai_assistance:
+      chatbot:
+        enabled: true
+        provider: "openai"
+        model: "gpt-4"
+        fallback_to_human: true
+        confidence_threshold: 0.8
+      auto_categorization:
+        enabled: true
+        categories: ["billing", "technical", "feature_request", "bug_report", "general"]
+      sentiment_analysis:
+        enabled: true
+        escalate_negative: true
+      knowledge_base:
+        enabled: true
+        auto_suggest: true
+        search_enabled: true
+    integrations:
+      zendesk:
+        enabled: true
+        sync_tickets: true
+        sync_users: true
+      intercom:
+        enabled: true
+        live_chat: true
+        user_tracking: true
+      salesforce:
+        enabled: true
+        case_sync: true
+        account_linking: true
+      slack:
+        enabled: true
+        internal_notifications: true
+        escalation_alerts: true
+    knowledge_base:
+      categories:
+        - name: "Getting Started"
+          articles: ["account_setup", "first_steps", "basic_features"]
+        - name: "API Documentation"
+          articles: ["authentication", "endpoints", "rate_limits"]
+        - name: "Billing & Pricing"
+          articles: ["subscription_plans", "payment_methods", "invoicing"]
+        - name: "Troubleshooting"
+          articles: ["common_issues", "error_codes", "debugging"]
+      search:
+        enabled: true
+        full_text_search: true
+        auto_suggestions: true
+      analytics:
+        article_views: true
+        search_queries: true
+        user_feedback: true
+    sla_policies:
+      - name: "Enterprise"
+        response_time: "1h"
+        resolution_time: "24h"
+        availability: "24/7"
+      - name: "Professional"
+        response_time: "4h"
+        resolution_time: "48h"
+        availability: "business_hours"
+      - name: "Free"
+        response_time: "72h"
+        resolution_time: "7d"
+        availability: "community"
+    automation:
+      auto_close_resolved: true
+      auto_close_days: 7
+      satisfaction_surveys: true
+      follow_up_reminders: true
+    reporting:
+      ticket_metrics: true
+      agent_performance: true
+      customer_satisfaction: true
+      sla_compliance: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

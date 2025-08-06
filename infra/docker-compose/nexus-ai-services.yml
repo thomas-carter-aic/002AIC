@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # Model Management Service
+  model-management-service:
+    build:
+      context: ../../apps/backend-services/model-management-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8086
+      - DATABASE_URL=postgresql://nexus:nexus-password@postgres:5432/nexus
+      - REDIS_URL=redis://:nexus-password@redis:6379/0
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mlflow-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-net
+
+  # Model Training Service
+  model-training-service:
+    build:
+      context: ../../apps/backend-services/model-training-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8087
+      - REDIS_URL=redis://:nexus-password@redis:6379/0
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      - MODEL_MANAGEMENT_URL=http://model-management-service:8086
+    ports:
+      - "8087:8087"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mlflow-server:
+        condition: service_healthy
+      model-management-service:
+        condition: service_healthy
+    volumes:
+      - training-data:/tmp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-net
+
+  # Model Deployment Service
+  model-deployment-service:
+    build:
+      context: ../../apps/backend-services/model-deployment-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8088
+      - DATABASE_URL=postgresql://nexus:nexus-password@postgres:5432/nexus
+      - REDIS_URL=redis://:nexus-password@redis:6379/0
+      - MODEL_MANAGEMENT_URL=http://model-management-service:8086
+      - KUBERNETES_NAMESPACE=nexus-models
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      model-management-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-net
+
+  # Data Integration Service
+  data-integration-service:
+    build:
+      context: ../../apps/backend-services/data-integration-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8089
+      - DATABASE_URL=postgresql://nexus:nexus-password@postgres:5432/nexus
+      - MONGODB_URI=mongodb://nexus:nexus-password@mongodb:27017/nexus
+      - REDIS_URL=redis://:nexus-password@redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=nexus-minio
+      - MINIO_SECRET_KEY=nexus-minio-password
+    ports:
+      - "8089:8089"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-net
+
+  # Analytics Service
+  analytics-service:
+    build:
+      context: ../../apps/backend-services/analytics-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8090
+      - DATABASE_URL=postgresql://nexus:nexus-password@postgres:5432/nexus
+      - REDIS_URL=redis://:nexus-password@redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
+      - QDRANT_URL=http://qdrant:6333
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nexus-net
+
+volumes:
+  training-data:
+
+networks:
+  nexus-net:
+    external: true

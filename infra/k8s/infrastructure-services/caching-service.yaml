@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caching-service
+  namespace: aic-infrastructure
+  labels:
+    app: caching-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: caching-service
+  template:
+    metadata:
+      labels:
+        app: caching-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: caching-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: caching-service
+        image: 002aic/caching-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: caching-db-url
+        - name: REDIS_L1_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: l1-url
+        - name: REDIS_L2_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: l2-url
+        - name: MEMCACHED_URL
+          value: "memcached-service.aic-infrastructure.svc.cluster.local:11211"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: cache-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: caching-service-config
+      - name: cache-storage
+        persistentVolumeClaim:
+          claimName: caching-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: caching-service
+  namespace: aic-infrastructure
+  labels:
+    app: caching-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: caching-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: caching-service
+  namespace: aic-infrastructure
+  labels:
+    app: caching-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: caching-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caching-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    caching:
+      multi_tier: true
+      intelligent_routing: true
+      cache_warming: true
+      cache_invalidation: true
+      compression: true
+      encryption: false
+    tiers:
+      l1:
+        name: "in_memory"
+        provider: "redis"
+        max_memory: "2GB"
+        eviction_policy: "lru"
+        ttl_default: 300
+        ttl_max: 3600
+      l2:
+        name: "distributed"
+        provider: "redis_cluster"
+        max_memory: "10GB"
+        eviction_policy: "lru"
+        ttl_default: 3600
+        ttl_max: 86400
+      l3:
+        name: "persistent"
+        provider: "memcached"
+        max_memory: "50GB"
+        eviction_policy: "lru"
+        ttl_default: 86400
+        ttl_max: 604800
+    cache_patterns:
+      - name: "api_responses"
+        tier: "l1"
+        ttl: 300
+        compression: true
+        key_pattern: "api:*"
+      - name: "database_queries"
+        tier: "l2"
+        ttl: 1800
+        compression: true
+        key_pattern: "db:*"
+      - name: "user_sessions"
+        tier: "l1"
+        ttl: 3600
+        compression: false
+        key_pattern: "session:*"
+      - name: "static_content"
+        tier: "l3"
+        ttl: 86400
+        compression: true
+        key_pattern: "static:*"
+      - name: "ml_models"
+        tier: "l2"
+        ttl: 7200
+        compression: true
+        key_pattern: "model:*"
+    features:
+      cache_aside: true
+      write_through: true
+      write_behind: false
+      read_through: true
+      refresh_ahead: true
+    invalidation:
+      time_based: true
+      event_based: true
+      manual: true
+      cascade: true
+    monitoring:
+      hit_rate_tracking: true
+      performance_metrics: true
+      memory_usage_tracking: true
+      eviction_tracking: true
+    optimization:
+      auto_scaling: true
+      predictive_caching: true
+      cache_warming: true
+      hot_key_detection: true
+    security:
+      access_control: true
+      encryption_at_rest: false
+      encryption_in_transit: true
+      audit_logging: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

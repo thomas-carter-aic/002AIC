@@ -1,0 +1,401 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+  namespace: aic-business
+  labels:
+    app: temporal-frontend
+    tier: workflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: temporal-frontend
+  template:
+    metadata:
+      labels:
+        app: temporal-frontend
+        tier: workflow
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: temporal-frontend
+        image: temporalio/server:1.21.0
+        ports:
+        - containerPort: 7233
+          name: grpc
+        - containerPort: 7234
+          name: membership
+        env:
+        - name: DB
+          value: "postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-secret
+              key: postgres-password
+        - name: POSTGRES_SEEDS
+          value: "postgresql-service.aic-platform.svc.cluster.local"
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: "/etc/temporal/config/dynamicconfig/development.yaml"
+        command:
+        - temporal-server
+        - --root
+        - /etc/temporal
+        - --env
+        - development
+        - start
+        - --service
+        - frontend
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: temporal-config
+          mountPath: /etc/temporal/config
+        livenessProbe:
+          grpc:
+            port: 7233
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          grpc:
+            port: 7233
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: temporal-config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-history
+  namespace: aic-business
+  labels:
+    app: temporal-history
+    tier: workflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: temporal-history
+  template:
+    metadata:
+      labels:
+        app: temporal-history
+        tier: workflow
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: temporal-history
+        image: temporalio/server:1.21.0
+        ports:
+        - containerPort: 7234
+          name: grpc
+        env:
+        - name: DB
+          value: "postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-secret
+              key: postgres-password
+        - name: POSTGRES_SEEDS
+          value: "postgresql-service.aic-platform.svc.cluster.local"
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: "/etc/temporal/config/dynamicconfig/development.yaml"
+        command:
+        - temporal-server
+        - --root
+        - /etc/temporal
+        - --env
+        - development
+        - start
+        - --service
+        - history
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: temporal-config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: temporal-config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-matching
+  namespace: aic-business
+  labels:
+    app: temporal-matching
+    tier: workflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-matching
+  template:
+    metadata:
+      labels:
+        app: temporal-matching
+        tier: workflow
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: temporal-matching
+        image: temporalio/server:1.21.0
+        ports:
+        - containerPort: 7235
+          name: grpc
+        env:
+        - name: DB
+          value: "postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-secret
+              key: postgres-password
+        - name: POSTGRES_SEEDS
+          value: "postgresql-service.aic-platform.svc.cluster.local"
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: "/etc/temporal/config/dynamicconfig/development.yaml"
+        command:
+        - temporal-server
+        - --root
+        - /etc/temporal
+        - --env
+        - development
+        - start
+        - --service
+        - matching
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: temporal-config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: temporal-config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+  namespace: aic-business
+  labels:
+    app: temporal-worker
+    tier: workflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: temporal-worker
+  template:
+    metadata:
+      labels:
+        app: temporal-worker
+        tier: workflow
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: temporal-worker
+        image: temporalio/server:1.21.0
+        ports:
+        - containerPort: 7239
+          name: grpc
+        env:
+        - name: DB
+          value: "postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-secret
+              key: postgres-password
+        - name: POSTGRES_SEEDS
+          value: "postgresql-service.aic-platform.svc.cluster.local"
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: "/etc/temporal/config/dynamicconfig/development.yaml"
+        command:
+        - temporal-server
+        - --root
+        - /etc/temporal
+        - --env
+        - development
+        - start
+        - --service
+        - worker
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: temporal-config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: temporal-config
+        configMap:
+          name: temporal-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-frontend
+  namespace: aic-business
+  labels:
+    app: temporal-frontend
+    tier: workflow
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7233
+    targetPort: 7233
+    protocol: TCP
+    name: grpc
+  selector:
+    app: temporal-frontend
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: temporal-secret
+  namespace: aic-business
+type: Opaque
+data:
+  # Base64 encoded PostgreSQL password
+  postgres-password: cGFzc3dvcmQ=
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config
+  namespace: aic-business
+data:
+  config.yml: |
+    log:
+      stdout: true
+      level: info
+    
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      numHistoryShards: 4
+      datastores:
+        default:
+          sql:
+            pluginName: "postgres"
+            databaseName: "temporal"
+            connectAddr: "postgresql-service.aic-platform.svc.cluster.local:5432"
+            connectProtocol: "tcp"
+            user: "postgres"
+            password: "password"
+            maxConns: 20
+            maxIdleConns: 20
+            maxConnLifetime: "1h"
+        visibility:
+          sql:
+            pluginName: "postgres"
+            databaseName: "temporal_visibility"
+            connectAddr: "postgresql-service.aic-platform.svc.cluster.local:5432"
+            connectProtocol: "tcp"
+            user: "postgres"
+            password: "password"
+            maxConns: 10
+            maxIdleConns: 10
+            maxConnLifetime: "1h"
+    
+    global:
+      membership:
+        maxJoinDuration: 30s
+        broadcastAddress: "0.0.0.0"
+      pprof:
+        port: 7936
+      metrics:
+        prometheus:
+          timerType: "histogram"
+          listenAddress: "0.0.0.0:9090"
+    
+    services:
+      frontend:
+        rpc:
+          grpcPort: 7233
+          membershipPort: 6933
+          bindOnLocalHost: false
+      matching:
+        rpc:
+          grpcPort: 7235
+          membershipPort: 6935
+          bindOnLocalHost: false
+      history:
+        rpc:
+          grpcPort: 7234
+          membershipPort: 6934
+          bindOnLocalHost: false
+      worker:
+        rpc:
+          grpcPort: 7239
+          membershipPort: 6939
+          bindOnLocalHost: false
+  
+  dynamicconfig/development.yaml: |
+    system.forceSearchAttributesCacheRefreshOnRead:
+      - value: true
+        constraints: {}
+    frontend.enableUpdateWorkflowExecution:
+      - value: true
+        constraints: {}
+    history.enableTaskInfoLogByDomainID:
+      - value: true
+        constraints: {}
+    worker.enableLogging:
+      - value: true
+        constraints: {}

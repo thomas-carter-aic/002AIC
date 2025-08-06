@@ -1,0 +1,432 @@
+# Nexus Platform - Production Values
+# This file contains production-ready configuration values
+
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+  
+# Environment configuration
+environment: production
+region: us-west-2
+zone: us-west-2a
+
+# Security configuration
+security:
+  enabled: true
+  rbac:
+    create: true
+  networkPolicies:
+    enabled: true
+  podSecurityPolicy:
+    enabled: true
+  serviceAccount:
+    create: true
+    name: nexus-platform-sa
+
+# High Availability configuration
+replicaCount:
+  authorizationService: 3
+  apiGatewayService: 3
+  userManagementService: 2
+  configurationService: 2
+  discoveryService: 2
+  healthCheckService: 2
+  modelManagementService: 3
+  modelTrainingService: 2
+  modelDeploymentService: 2
+  dataIntegrationService: 2
+  analyticsService: 2
+
+# Auto-scaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Resource limits and requests
+resources:
+  authorizationService:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  apiGatewayService:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+  modelManagementService:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  modelTrainingService:
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+
+# Persistent storage configuration
+persistence:
+  enabled: true
+  storageClass: "gp3"
+  accessMode: ReadWriteOnce
+  size:
+    postgresql: 100Gi
+    mongodb: 100Gi
+    redis: 20Gi
+    mlflow: 500Gi
+    minio: 1Ti
+    prometheus: 100Gi
+    grafana: 10Gi
+
+# Database configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "nexus-postgres-prod-password"
+    database: "nexus"
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+  readReplicas:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 100Gi
+
+mongodb:
+  enabled: true
+  auth:
+    rootPassword: "nexus-mongo-prod-password"
+    database: "nexus"
+  replicaSet:
+    enabled: true
+    replicas:
+      secondary: 2
+      arbiter: 1
+  persistence:
+    enabled: true
+    size: 100Gi
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: "nexus-redis-prod-password"
+  master:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 20Gi
+
+kafka:
+  enabled: true
+  replicaCount: 3
+  auth:
+    clientProtocol: sasl
+    interBrokerProtocol: sasl
+  persistence:
+    enabled: true
+    size: 100Gi
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+# Kong API Gateway configuration
+kong:
+  enabled: true
+  replicaCount: 3
+  database: postgresql
+  postgresql:
+    enabled: false  # Use external PostgreSQL
+  env:
+    database: postgres
+    pg_host: nexus-postgresql
+    pg_port: 5432
+    pg_database: kong
+    pg_user: kong
+    pg_password: kong-prod-password
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+
+# Service Mesh (Kuma) configuration
+kuma:
+  enabled: true
+  controlPlane:
+    replicas: 3
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  dataPlane:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# AI/ML Infrastructure
+mlflow:
+  enabled: true
+  replicaCount: 2
+  backend_store_uri: "postgresql://mlflow:mlflow-prod-password@nexus-postgresql:5432/mlflow"
+  default_artifact_root: "s3://nexus-mlflow-artifacts"
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 500Gi
+
+minio:
+  enabled: true
+  mode: distributed
+  replicas: 4
+  auth:
+    rootUser: nexus-minio-admin
+    rootPassword: nexus-minio-prod-password
+  persistence:
+    enabled: true
+    size: 1Ti
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+qdrant:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 100Gi
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+airflow:
+  enabled: true
+  executor: KubernetesExecutor
+  webserver:
+    replicas: 2
+  scheduler:
+    replicas: 2
+  workers:
+    replicas: 3
+  postgresql:
+    enabled: false  # Use external PostgreSQL
+  redis:
+    enabled: false  # Use external Redis
+  config:
+    core:
+      executor: KubernetesExecutor
+    webserver:
+      secret_key: nexus-airflow-prod-secret
+    kubernetes:
+      namespace: nexus-ai
+      worker_container_repository: nexus-airflow-worker
+      worker_container_tag: latest
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  prometheus:
+    enabled: true
+    server:
+      replicaCount: 2
+      retention: "30d"
+      resources:
+        limits:
+          cpu: 2000m
+          memory: 8Gi
+        requests:
+          cpu: 1000m
+          memory: 4Gi
+      persistence:
+        enabled: true
+        size: 100Gi
+  grafana:
+    enabled: true
+    replicas: 2
+    adminPassword: nexus-grafana-prod-password
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      size: 10Gi
+  jaeger:
+    enabled: true
+    collector:
+      replicaCount: 2
+    query:
+      replicaCount: 2
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: api.nexus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+          service: kong-proxy
+    - host: admin.nexus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+          service: kong-admin
+    - host: mlflow.nexus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+          service: mlflow-server
+    - host: grafana.nexus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+          service: grafana
+    - host: airflow.nexus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+          service: airflow-webserver
+  tls:
+    - secretName: nexus-tls-cert
+      hosts:
+        - api.nexus.ai
+        - admin.nexus.ai
+        - mlflow.nexus.ai
+        - grafana.nexus.ai
+        - airflow.nexus.ai
+
+# Network policies for security
+networkPolicies:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+
+# Pod Disruption Budgets
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Service configuration
+service:
+  type: ClusterIP
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+# Image configuration
+image:
+  registry: nexus-registry.ai
+  pullPolicy: IfNotPresent
+  tag: "2.0.0"
+
+# Environment-specific configurations
+environments:
+  production:
+    replicas: 3
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+  staging:
+    replicas: 2
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  development:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi

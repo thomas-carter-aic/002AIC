@@ -1,53 +1,134 @@
 """
-Model Training Service - Python
-ML model training pipeline for the 002AIC platform
-Handles distributed training, hyperparameter tuning, and experiment tracking
+Nexus Platform - Model Training Service
+Handles ML model training, hyperparameter tuning, and experiment tracking
 """
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any, Union
-import uvicorn
 import os
-import logging
-from datetime import datetime, timedelta
 import asyncio
-import uuid
+import logging
+from datetime import datetime
+from typing import List, Optional, Dict, Any, Union
+from contextlib import asynccontextmanager
 import json
-import numpy as np
-import pandas as pd
-from enum import Enum
+import uuid
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 import mlflow
 import mlflow.sklearn
 import mlflow.tensorflow
 import mlflow.pytorch
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-import joblib
-import tempfile
-from pathlib import Path
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.svm import SVC, SVR
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, r2_score
+import optuna
+import redis
+import httpx
 
-# Import our auth middleware
-import sys
-sys.path.append('/home/oss/002AIC/libs/auth-middleware/python')
-from auth_middleware import FastAPIAuthMiddleware, AuthConfig
+# Configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://:nexus-password@redis:6379/0")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow-server:5000")
+MODEL_MANAGEMENT_URL = os.getenv("MODEL_MANAGEMENT_URL", "http://model-management-service:8086")
+SERVICE_PORT = int(os.getenv("PORT", "8087"))
 
-# Configure logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+# Redis setup
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+# MLflow setup
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+# Pydantic Models
+class TrainingJobCreate(BaseModel):
+    job_name: str = Field(..., description="Training job name")
+    model_type: str = Field(..., description="Model type (classifier, regressor)")
+    algorithm: str = Field(..., description="Algorithm (random_forest, logistic_regression, svm)")
+    dataset_path: Optional[str] = None
+    target_column: str = Field(..., description="Target column name")
+    feature_columns: Optional[List[str]] = None
+    hyperparameters: Optional[Dict[str, Any]] = None
+    hyperparameter_tuning: bool = False
+    tuning_method: str = "grid_search"  # grid_search, random_search, optuna
+    cv_folds: int = 5
+    test_size: float = 0.2
+    random_state: int = 42
+
+class TrainingJobResponse(BaseModel):
+    job_id: str
+    job_name: str
+    status: str
+    model_type: str
+    algorithm: str
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    metrics: Optional[Dict[str, float]] = None
+    best_parameters: Optional[Dict[str, Any]] = None
+    model_id: Optional[str] = None
+    error_message: Optional[str] = None
+
+class HyperparameterTuningConfig(BaseModel):
+    method: str = "optuna"  # optuna, grid_search, random_search
+    n_trials: int = 100
+    timeout: Optional[int] = None  # seconds
+    parameter_space: Dict[str, Any]
+
+class ExperimentCreate(BaseModel):
+    experiment_name: str
+    description: Optional[str] = None
+    tags: Optional[Dict[str, str]] = None
+
+class ExperimentResponse(BaseModel):
+    experiment_id: str
+    name: str
+    description: Optional[str]
+    tags: Optional[Dict[str, str]]
+    created_at: datetime
+
+# Training job storage
+training_jobs = {}
+
+# Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Model Training Service starting up...")
+    
+    try:
+        # Test Redis connection
+        redis_client.ping()
+        logger.info("✅ Redis connection successful")
+        
+        # Test MLflow connection
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        logger.info("✅ MLflow connection configured")
+        
+    except Exception as e:
+        logger.error(f"❌ Startup connection test failed: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Model Training Service shutting down...")
+
+# Create FastAPI app
 app = FastAPI(
-    title="002AIC Model Training Service",
-    description="ML model training and experiment management",
+    title="Nexus Model Training Service",
+    description="ML Model Training and Hyperparameter Tuning for Nexus Platform",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    lifespan=lifespan
 )
 
-# CORS middleware
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -56,519 +137,471 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize auth middleware
-auth_config = AuthConfig(
-    authorization_service_url=os.getenv("AUTHORIZATION_SERVICE_URL", "http://authorization-service:8080"),
-    jwt_public_key_url=os.getenv("JWT_PUBLIC_KEY_URL", "http://keycloak:8080/realms/002aic/protocol/openid-connect/certs"),
-    jwt_issuer=os.getenv("JWT_ISSUER", "http://keycloak:8080/realms/002aic"),
-    jwt_audience=os.getenv("JWT_AUDIENCE", "002aic-api"),
-    service_name="model-training-service"
-)
-
-auth = FastAPIAuthMiddleware(auth_config)
-
-# Initialize MLflow
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
-
-# Enums
-class TrainingStatus(str, Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-class ModelType(str, Enum):
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-    CLUSTERING = "clustering"
-    NLP = "nlp"
-    COMPUTER_VISION = "computer_vision"
-    TIME_SERIES = "time_series"
-
-class Framework(str, Enum):
-    SKLEARN = "sklearn"
-    TENSORFLOW = "tensorflow"
-    PYTORCH = "pytorch"
-    XGBOOST = "xgboost"
-    LIGHTGBM = "lightgbm"
-
-# Pydantic models
-class TrainingJobRequest(BaseModel):
-    name: str = Field(..., description="Training job name")
-    model_type: ModelType = Field(..., description="Type of model to train")
-    framework: Framework = Field(..., description="ML framework to use")
-    dataset_id: str = Field(..., description="Dataset ID for training")
-    algorithm: str = Field(..., description="Algorithm to use")
-    hyperparameters: Dict[str, Any] = Field(default_factory=dict, description="Hyperparameters")
-    training_config: Dict[str, Any] = Field(default_factory=dict, description="Training configuration")
-    validation_split: float = Field(default=0.2, description="Validation split ratio")
-    test_split: float = Field(default=0.1, description="Test split ratio")
-    cross_validation: bool = Field(default=False, description="Use cross-validation")
-    early_stopping: bool = Field(default=True, description="Enable early stopping")
-    max_epochs: int = Field(default=100, description="Maximum training epochs")
-    batch_size: int = Field(default=32, description="Training batch size")
-    learning_rate: float = Field(default=0.001, description="Learning rate")
-    tags: List[str] = Field(default_factory=list, description="Training job tags")
-
-class HyperparameterTuningRequest(BaseModel):
-    base_job_id: str = Field(..., description="Base training job ID")
-    tuning_algorithm: str = Field(default="random", description="Tuning algorithm (random, grid, bayesian)")
-    parameter_space: Dict[str, Any] = Field(..., description="Parameter search space")
-    max_trials: int = Field(default=50, description="Maximum number of trials")
-    objective_metric: str = Field(default="accuracy", description="Metric to optimize")
-    objective_direction: str = Field(default="maximize", description="Optimization direction")
-    parallel_trials: int = Field(default=4, description="Number of parallel trials")
-
-class TrainingJobResponse(BaseModel):
-    id: str
-    name: str
-    model_type: ModelType
-    framework: Framework
-    status: TrainingStatus
-    progress: float
-    current_epoch: Optional[int]
-    total_epochs: int
-    metrics: Dict[str, float]
-    best_metrics: Dict[str, float]
-    model_artifacts: List[str]
-    logs_url: Optional[str]
-    created_at: datetime
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    duration_seconds: Optional[int]
-    created_by: str
-
-class ExperimentResponse(BaseModel):
-    id: str
-    name: str
-    description: Optional[str]
-    runs_count: int
-    best_run_id: Optional[str]
-    best_metrics: Dict[str, float]
-    created_at: datetime
-    last_run_at: Optional[datetime]
-
-class ModelMetrics(BaseModel):
-    accuracy: Optional[float]
-    precision: Optional[float]
-    recall: Optional[float]
-    f1_score: Optional[float]
-    loss: Optional[float]
-    val_loss: Optional[float]
-    custom_metrics: Dict[str, float] = Field(default_factory=dict)
-
-# Training job storage (in production, use proper database)
-training_jobs = {}
-experiments = {}
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    mlflow_healthy = True
-    
     try:
-        mlflow.get_tracking_uri()
-    except Exception:
-        mlflow_healthy = False
-    
-    return {
-        "status": "healthy" if mlflow_healthy else "degraded",
-        "service": "model-training-service",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0",
-        "dependencies": {
-            "mlflow": "healthy" if mlflow_healthy else "unhealthy"
+        redis_client.ping()
+        return {
+            "status": "healthy",
+            "service": "model-training-service",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0"
         }
-    }
-
-# Training job endpoints
-@app.get("/v1/training/jobs", response_model=List[TrainingJobResponse])
-@auth.require_auth("model", "read")
-async def list_training_jobs(
-    status: Optional[TrainingStatus] = None,
-    model_type: Optional[ModelType] = None,
-    framework: Optional[Framework] = None,
-    skip: int = 0,
-    limit: int = 100
-):
-    """List training jobs"""
-    try:
-        jobs = list(training_jobs.values())
-        
-        # Apply filters
-        if status:
-            jobs = [job for job in jobs if job["status"] == status.value]
-        if model_type:
-            jobs = [job for job in jobs if job["model_type"] == model_type.value]
-        if framework:
-            jobs = [job for job in jobs if job["framework"] == framework.value]
-        
-        # Apply pagination
-        jobs = jobs[skip:skip + limit]
-        
-        return [TrainingJobResponse(**job) for job in jobs]
     except Exception as e:
-        logger.error(f"Error listing training jobs: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list training jobs")
+        raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
-@app.post("/v1/training/jobs", response_model=TrainingJobResponse)
-@auth.require_auth("model", "train")
+# Experiment Management
+@app.post("/experiments", response_model=ExperimentResponse)
+async def create_experiment(experiment: ExperimentCreate):
+    """Create a new MLflow experiment"""
+    try:
+        # Create experiment in MLflow
+        experiment_id = mlflow.create_experiment(
+            name=experiment.experiment_name,
+            tags=experiment.tags
+        )
+        
+        logger.info(f"✅ Created experiment: {experiment.experiment_name}")
+        
+        return ExperimentResponse(
+            experiment_id=experiment_id,
+            name=experiment.experiment_name,
+            description=experiment.description,
+            tags=experiment.tags,
+            created_at=datetime.utcnow()
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating experiment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/experiments", response_model=List[ExperimentResponse])
+async def list_experiments():
+    """List all MLflow experiments"""
+    try:
+        experiments = mlflow.search_experiments()
+        
+        return [
+            ExperimentResponse(
+                experiment_id=exp.experiment_id,
+                name=exp.name,
+                description=exp.tags.get("description"),
+                tags=exp.tags,
+                created_at=datetime.fromtimestamp(exp.creation_time / 1000)
+            )
+            for exp in experiments
+        ]
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing experiments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Training Job Management
+@app.post("/training-jobs", response_model=TrainingJobResponse)
 async def create_training_job(
-    job_request: TrainingJobRequest,
-    background_tasks: BackgroundTasks
+    job: TrainingJobCreate, 
+    background_tasks: BackgroundTasks,
+    dataset_file: Optional[UploadFile] = File(None)
 ):
     """Create a new training job"""
     try:
         job_id = str(uuid.uuid4())
         
+        # Handle dataset upload
+        dataset_path = job.dataset_path
+        if dataset_file:
+            # Save uploaded file
+            dataset_path = f"/tmp/dataset_{job_id}.csv"
+            with open(dataset_path, "wb") as f:
+                content = await dataset_file.read()
+                f.write(content)
+        
         # Create training job record
-        job_data = {
-            "id": job_id,
-            "name": job_request.name,
-            "model_type": job_request.model_type.value,
-            "framework": job_request.framework.value,
-            "status": TrainingStatus.QUEUED.value,
-            "progress": 0.0,
-            "current_epoch": None,
-            "total_epochs": job_request.max_epochs,
-            "metrics": {},
-            "best_metrics": {},
-            "model_artifacts": [],
-            "logs_url": None,
+        training_job = {
+            "job_id": job_id,
+            "job_name": job.job_name,
+            "status": "queued",
+            "model_type": job.model_type,
+            "algorithm": job.algorithm,
+            "dataset_path": dataset_path,
+            "target_column": job.target_column,
+            "feature_columns": job.feature_columns,
+            "hyperparameters": job.hyperparameters,
+            "hyperparameter_tuning": job.hyperparameter_tuning,
+            "tuning_method": job.tuning_method,
+            "cv_folds": job.cv_folds,
+            "test_size": job.test_size,
+            "random_state": job.random_state,
             "created_at": datetime.utcnow(),
             "started_at": None,
             "completed_at": None,
-            "duration_seconds": None,
-            "created_by": "user",  # Get from auth context
-            "config": job_request.dict()
+            "metrics": None,
+            "best_parameters": None,
+            "model_id": None,
+            "error_message": None
         }
         
-        training_jobs[job_id] = job_data
+        # Store in memory and Redis
+        training_jobs[job_id] = training_job
+        redis_client.setex(f"training_job:{job_id}", 86400, json.dumps(training_job, default=str))
         
-        # Queue training job
-        background_tasks.add_task(execute_training_job, job_id, job_request)
+        # Start training in background
+        background_tasks.add_task(run_training_job, job_id)
         
-        return TrainingJobResponse(**job_data)
+        logger.info(f"✅ Created training job: {job.job_name}")
+        
+        return TrainingJobResponse(**training_job)
+        
     except Exception as e:
-        logger.error(f"Error creating training job: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create training job")
+        logger.error(f"❌ Error creating training job: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/v1/training/jobs/{job_id}", response_model=TrainingJobResponse)
-@auth.require_auth("model", "read")
+@app.get("/training-jobs", response_model=List[TrainingJobResponse])
+async def list_training_jobs(status: Optional[str] = None):
+    """List all training jobs"""
+    try:
+        jobs = []
+        for job_id, job_data in training_jobs.items():
+            if status is None or job_data["status"] == status:
+                jobs.append(TrainingJobResponse(**job_data))
+        
+        return jobs
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing training jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/training-jobs/{job_id}", response_model=TrainingJobResponse)
 async def get_training_job(job_id: str):
-    """Get training job details"""
+    """Get a specific training job"""
     try:
         if job_id not in training_jobs:
-            raise HTTPException(status_code=404, detail="Training job not found")
+            # Try to load from Redis
+            cached_job = redis_client.get(f"training_job:{job_id}")
+            if cached_job:
+                job_data = json.loads(cached_job)
+                # Convert string dates back to datetime
+                for date_field in ["created_at", "started_at", "completed_at"]:
+                    if job_data[date_field]:
+                        job_data[date_field] = datetime.fromisoformat(job_data[date_field])
+                training_jobs[job_id] = job_data
+            else:
+                raise HTTPException(status_code=404, detail="Training job not found")
         
-        job_data = training_jobs[job_id]
-        return TrainingJobResponse(**job_data)
+        return TrainingJobResponse(**training_jobs[job_id])
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting training job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get training job")
+        logger.error(f"❌ Error getting training job: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v1/training/jobs/{job_id}/cancel")
-@auth.require_auth("model", "train")
-async def cancel_training_job(job_id: str):
-    """Cancel a training job"""
+async def run_training_job(job_id: str):
+    """Run the training job asynchronously"""
     try:
-        if job_id not in training_jobs:
-            raise HTTPException(status_code=404, detail="Training job not found")
-        
         job_data = training_jobs[job_id]
-        
-        if job_data["status"] not in [TrainingStatus.QUEUED.value, TrainingStatus.RUNNING.value]:
-            raise HTTPException(status_code=400, detail="Cannot cancel job in current status")
-        
-        job_data["status"] = TrainingStatus.CANCELLED.value
-        job_data["completed_at"] = datetime.utcnow()
-        
-        return {"message": "Training job cancelled successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error cancelling training job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to cancel training job")
-
-# Hyperparameter tuning endpoints
-@app.post("/v1/training/hyperparameter-tuning")
-@auth.require_auth("model", "train")
-async def start_hyperparameter_tuning(
-    tuning_request: HyperparameterTuningRequest,
-    background_tasks: BackgroundTasks
-):
-    """Start hyperparameter tuning"""
-    try:
-        if tuning_request.base_job_id not in training_jobs:
-            raise HTTPException(status_code=404, detail="Base training job not found")
-        
-        tuning_job_id = str(uuid.uuid4())
-        
-        # Create tuning job record
-        tuning_data = {
-            "id": tuning_job_id,
-            "base_job_id": tuning_request.base_job_id,
-            "status": "running",
-            "trials_completed": 0,
-            "max_trials": tuning_request.max_trials,
-            "best_trial": None,
-            "best_metrics": {},
-            "created_at": datetime.utcnow(),
-            "config": tuning_request.dict()
-        }
-        
-        # Queue hyperparameter tuning
-        background_tasks.add_task(execute_hyperparameter_tuning, tuning_job_id, tuning_request)
-        
-        return {
-            "tuning_job_id": tuning_job_id,
-            "message": "Hyperparameter tuning started",
-            "max_trials": tuning_request.max_trials
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error starting hyperparameter tuning: {e}")
-        raise HTTPException(status_code=500, detail="Failed to start hyperparameter tuning")
-
-# Experiment management endpoints
-@app.get("/v1/training/experiments", response_model=List[ExperimentResponse])
-@auth.require_auth("model", "read")
-async def list_experiments():
-    """List ML experiments"""
-    try:
-        mlflow_experiments = mlflow.search_experiments()
-        
-        experiment_responses = []
-        for exp in mlflow_experiments:
-            runs = mlflow.search_runs(experiment_ids=[exp.experiment_id])
-            
-            best_run = None
-            best_metrics = {}
-            if not runs.empty:
-                # Find best run based on accuracy (or other metric)
-                if 'metrics.accuracy' in runs.columns:
-                    best_run = runs.loc[runs['metrics.accuracy'].idxmax()]
-                    best_metrics = {
-                        col.replace('metrics.', ''): best_run[col] 
-                        for col in runs.columns 
-                        if col.startswith('metrics.') and pd.notna(best_run[col])
-                    }
-            
-            experiment_responses.append(ExperimentResponse(
-                id=exp.experiment_id,
-                name=exp.name,
-                description=exp.tags.get('description', '') if exp.tags else None,
-                runs_count=len(runs),
-                best_run_id=best_run['run_id'] if best_run is not None else None,
-                best_metrics=best_metrics,
-                created_at=datetime.fromtimestamp(exp.creation_time / 1000),
-                last_run_at=datetime.fromtimestamp(runs['start_time'].max() / 1000) if not runs.empty else None
-            ))
-        
-        return experiment_responses
-    except Exception as e:
-        logger.error(f"Error listing experiments: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list experiments")
-
-@app.post("/v1/training/experiments")
-@auth.require_auth("model", "create")
-async def create_experiment(name: str, description: Optional[str] = None):
-    """Create a new ML experiment"""
-    try:
-        experiment_id = mlflow.create_experiment(
-            name=name,
-            tags={"description": description} if description else None
-        )
-        
-        return {
-            "experiment_id": experiment_id,
-            "name": name,
-            "description": description,
-            "created_at": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error creating experiment: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create experiment")
-
-# Model evaluation endpoints
-@app.post("/v1/training/evaluate")
-@auth.require_auth("model", "read")
-async def evaluate_model(
-    model_id: str,
-    dataset_id: str,
-    metrics: List[str] = ["accuracy", "precision", "recall", "f1_score"]
-):
-    """Evaluate a trained model"""
-    try:
-        # This is a simplified implementation
-        # In production, load actual model and dataset
-        
-        # Generate mock evaluation results
-        evaluation_results = {
-            "model_id": model_id,
-            "dataset_id": dataset_id,
-            "metrics": {
-                "accuracy": np.random.uniform(0.8, 0.95),
-                "precision": np.random.uniform(0.75, 0.9),
-                "recall": np.random.uniform(0.7, 0.88),
-                "f1_score": np.random.uniform(0.72, 0.89)
-            },
-            "confusion_matrix": [[85, 5], [10, 90]],
-            "evaluation_time": datetime.utcnow().isoformat(),
-            "sample_predictions": [
-                {"input": "sample_1", "predicted": "class_a", "actual": "class_a", "confidence": 0.92},
-                {"input": "sample_2", "predicted": "class_b", "actual": "class_b", "confidence": 0.87}
-            ]
-        }
-        
-        return evaluation_results
-    except Exception as e:
-        logger.error(f"Error evaluating model: {e}")
-        raise HTTPException(status_code=500, detail="Failed to evaluate model")
-
-# Background tasks
-async def execute_training_job(job_id: str, job_request: TrainingJobRequest):
-    """Background task to execute training job"""
-    try:
-        logger.info(f"Starting training job {job_id}")
-        
-        # Update job status
-        job_data = training_jobs[job_id]
-        job_data["status"] = TrainingStatus.RUNNING.value
+        job_data["status"] = "running"
         job_data["started_at"] = datetime.utcnow()
         
+        logger.info(f"🏃 Starting training job: {job_id}")
+        
+        # Load dataset
+        if not job_data["dataset_path"]:
+            raise ValueError("No dataset provided")
+        
+        df = pd.read_csv(job_data["dataset_path"])
+        
+        # Prepare features and target
+        target_col = job_data["target_column"]
+        if target_col not in df.columns:
+            raise ValueError(f"Target column '{target_col}' not found in dataset")
+        
+        feature_cols = job_data["feature_columns"]
+        if feature_cols is None:
+            feature_cols = [col for col in df.columns if col != target_col]
+        
+        X = df[feature_cols]
+        y = df[target_col]
+        
+        # Train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, 
+            test_size=job_data["test_size"], 
+            random_state=job_data["random_state"],
+            stratify=y if job_data["model_type"] == "classifier" else None
+        )
+        
         # Start MLflow run
-        with mlflow.start_run(run_name=job_request.name) as run:
+        with mlflow.start_run(run_name=f"{job_data['job_name']}_{job_id}"):
             # Log parameters
-            mlflow.log_params(job_request.hyperparameters)
-            mlflow.log_param("algorithm", job_request.algorithm)
-            mlflow.log_param("framework", job_request.framework.value)
-            mlflow.log_param("model_type", job_request.model_type.value)
+            mlflow.log_param("algorithm", job_data["algorithm"])
+            mlflow.log_param("model_type", job_data["model_type"])
+            mlflow.log_param("dataset_shape", df.shape)
+            mlflow.log_param("test_size", job_data["test_size"])
+            mlflow.log_param("cv_folds", job_data["cv_folds"])
             
-            # Simulate training process
-            for epoch in range(job_request.max_epochs):
-                # Check if job was cancelled
-                if training_jobs[job_id]["status"] == TrainingStatus.CANCELLED.value:
-                    logger.info(f"Training job {job_id} was cancelled")
-                    return
+            # Get model and hyperparameters
+            model, param_grid = get_model_and_params(
+                job_data["algorithm"], 
+                job_data["model_type"],
+                job_data["hyperparameters"]
+            )
+            
+            best_model = model
+            best_params = {}
+            
+            # Hyperparameter tuning
+            if job_data["hyperparameter_tuning"] and param_grid:
+                logger.info(f"🔧 Starting hyperparameter tuning: {job_data['tuning_method']}")
                 
-                # Simulate training step
-                await asyncio.sleep(1)  # Simulate training time
+                if job_data["tuning_method"] == "grid_search":
+                    search = GridSearchCV(
+                        model, param_grid, 
+                        cv=job_data["cv_folds"], 
+                        scoring='accuracy' if job_data["model_type"] == "classifier" else 'r2',
+                        n_jobs=-1
+                    )
+                elif job_data["tuning_method"] == "random_search":
+                    search = RandomizedSearchCV(
+                        model, param_grid, 
+                        cv=job_data["cv_folds"],
+                        scoring='accuracy' if job_data["model_type"] == "classifier" else 'r2',
+                        n_iter=50,
+                        n_jobs=-1,
+                        random_state=job_data["random_state"]
+                    )
+                else:  # optuna
+                    best_model, best_params = await run_optuna_optimization(
+                        model, X_train, y_train, param_grid, job_data
+                    )
                 
-                # Generate mock metrics
-                accuracy = 0.5 + (epoch / job_request.max_epochs) * 0.4 + np.random.normal(0, 0.02)
-                loss = 2.0 - (epoch / job_request.max_epochs) * 1.5 + np.random.normal(0, 0.1)
-                val_accuracy = accuracy - np.random.uniform(0, 0.05)
-                val_loss = loss + np.random.uniform(0, 0.1)
-                
-                # Update job progress
-                progress = ((epoch + 1) / job_request.max_epochs) * 100
-                job_data["progress"] = progress
-                job_data["current_epoch"] = epoch + 1
-                job_data["metrics"] = {
-                    "accuracy": accuracy,
-                    "loss": loss,
-                    "val_accuracy": val_accuracy,
-                    "val_loss": val_loss
+                if job_data["tuning_method"] in ["grid_search", "random_search"]:
+                    search.fit(X_train, y_train)
+                    best_model = search.best_estimator_
+                    best_params = search.best_params_
+                    
+                    # Log best parameters
+                    mlflow.log_params(best_params)
+                    
+            else:
+                # Train with default parameters
+                best_model.fit(X_train, y_train)
+            
+            # Make predictions
+            y_pred = best_model.predict(X_test)
+            
+            # Calculate metrics
+            metrics = {}
+            if job_data["model_type"] == "classifier":
+                metrics = {
+                    "accuracy": accuracy_score(y_test, y_pred),
+                    "precision": precision_score(y_test, y_pred, average='weighted'),
+                    "recall": recall_score(y_test, y_pred, average='weighted'),
+                    "f1_score": f1_score(y_test, y_pred, average='weighted')
                 }
-                
-                # Log metrics to MLflow
-                mlflow.log_metrics({
-                    "accuracy": accuracy,
-                    "loss": loss,
-                    "val_accuracy": val_accuracy,
-                    "val_loss": val_loss
-                }, step=epoch)
-                
-                # Update best metrics
-                if not job_data["best_metrics"] or accuracy > job_data["best_metrics"].get("accuracy", 0):
-                    job_data["best_metrics"] = job_data["metrics"].copy()
-                
-                logger.info(f"Training job {job_id} - Epoch {epoch + 1}/{job_request.max_epochs}, Accuracy: {accuracy:.4f}")
+            else:  # regressor
+                metrics = {
+                    "mse": mean_squared_error(y_test, y_pred),
+                    "rmse": np.sqrt(mean_squared_error(y_test, y_pred)),
+                    "r2_score": r2_score(y_test, y_pred)
+                }
             
-            # Create and save a simple model (for demonstration)
-            if job_request.framework == Framework.SKLEARN:
-                # Generate dummy data for training
-                X = np.random.randn(1000, 10)
-                y = np.random.randint(0, 2, 1000)
-                
-                # Train a simple model
-                model = RandomForestClassifier(n_estimators=100, random_state=42)
-                model.fit(X, y)
-                
-                # Log model
-                mlflow.sklearn.log_model(model, "model")
-                
-                # Save model artifact info
-                job_data["model_artifacts"] = [f"runs:/{run.info.run_id}/model"]
+            # Log metrics
+            mlflow.log_metrics(metrics)
             
-            # Complete the job
-            job_data["status"] = TrainingStatus.COMPLETED.value
+            # Log model
+            if job_data["algorithm"] in ["random_forest", "logistic_regression", "linear_regression", "svm"]:
+                mlflow.sklearn.log_model(best_model, "model")
+            
+            # Get MLflow run info
+            run = mlflow.active_run()
+            mlflow_run_id = run.info.run_id
+            
+            # Register model with Model Management Service
+            model_id = await register_model_with_management_service(
+                job_data, best_model, metrics, best_params, mlflow_run_id
+            )
+            
+            # Update job status
+            job_data["status"] = "completed"
             job_data["completed_at"] = datetime.utcnow()
-            job_data["duration_seconds"] = int((job_data["completed_at"] - job_data["started_at"]).total_seconds())
+            job_data["metrics"] = metrics
+            job_data["best_parameters"] = best_params
+            job_data["model_id"] = model_id
             
-            logger.info(f"Training job {job_id} completed successfully")
-    
+            logger.info(f"✅ Training job completed: {job_id}")
+            
     except Exception as e:
-        logger.error(f"Error in training job {job_id}: {e}")
-        
-        # Update job status to failed
-        job_data = training_jobs[job_id]
-        job_data["status"] = TrainingStatus.FAILED.value
+        logger.error(f"❌ Training job failed: {job_id} - {e}")
+        job_data["status"] = "failed"
         job_data["completed_at"] = datetime.utcnow()
-        if job_data["started_at"]:
-            job_data["duration_seconds"] = int((job_data["completed_at"] - job_data["started_at"]).total_seconds())
+        job_data["error_message"] = str(e)
+    
+    finally:
+        # Update Redis cache
+        redis_client.setex(f"training_job:{job_id}", 86400, json.dumps(job_data, default=str))
 
-async def execute_hyperparameter_tuning(tuning_job_id: str, tuning_request: HyperparameterTuningRequest):
-    """Background task to execute hyperparameter tuning"""
+def get_model_and_params(algorithm: str, model_type: str, custom_params: Optional[Dict] = None):
+    """Get model instance and parameter grid for hyperparameter tuning"""
+    
+    if algorithm == "random_forest":
+        if model_type == "classifier":
+            model = RandomForestClassifier(random_state=42)
+            param_grid = {
+                "n_estimators": [50, 100, 200],
+                "max_depth": [None, 10, 20, 30],
+                "min_samples_split": [2, 5, 10],
+                "min_samples_leaf": [1, 2, 4]
+            }
+        else:
+            model = RandomForestRegressor(random_state=42)
+            param_grid = {
+                "n_estimators": [50, 100, 200],
+                "max_depth": [None, 10, 20, 30],
+                "min_samples_split": [2, 5, 10],
+                "min_samples_leaf": [1, 2, 4]
+            }
+    
+    elif algorithm == "logistic_regression":
+        model = LogisticRegression(random_state=42, max_iter=1000)
+        param_grid = {
+            "C": [0.01, 0.1, 1, 10, 100],
+            "penalty": ["l1", "l2"],
+            "solver": ["liblinear", "saga"]
+        }
+    
+    elif algorithm == "linear_regression":
+        model = LinearRegression()
+        param_grid = {
+            "fit_intercept": [True, False],
+            "normalize": [True, False]
+        }
+    
+    elif algorithm == "svm":
+        if model_type == "classifier":
+            model = SVC(random_state=42)
+            param_grid = {
+                "C": [0.1, 1, 10, 100],
+                "kernel": ["linear", "rbf", "poly"],
+                "gamma": ["scale", "auto", 0.001, 0.01, 0.1, 1]
+            }
+        else:
+            model = SVR()
+            param_grid = {
+                "C": [0.1, 1, 10, 100],
+                "kernel": ["linear", "rbf", "poly"],
+                "gamma": ["scale", "auto", 0.001, 0.01, 0.1, 1]
+            }
+    
+    else:
+        raise ValueError(f"Unsupported algorithm: {algorithm}")
+    
+    # Override with custom parameters if provided
+    if custom_params:
+        model.set_params(**custom_params)
+    
+    return model, param_grid
+
+async def run_optuna_optimization(model, X_train, y_train, param_grid, job_data):
+    """Run Optuna hyperparameter optimization"""
+    
+    def objective(trial):
+        # Suggest parameters based on param_grid
+        params = {}
+        for param, values in param_grid.items():
+            if isinstance(values[0], int):
+                params[param] = trial.suggest_int(param, min(values), max(values))
+            elif isinstance(values[0], float):
+                params[param] = trial.suggest_float(param, min(values), max(values))
+            else:
+                params[param] = trial.suggest_categorical(param, values)
+        
+        # Set model parameters
+        model.set_params(**params)
+        
+        # Cross-validation
+        from sklearn.model_selection import cross_val_score
+        scores = cross_val_score(
+            model, X_train, y_train, 
+            cv=job_data["cv_folds"],
+            scoring='accuracy' if job_data["model_type"] == "classifier" else 'r2'
+        )
+        
+        return scores.mean()
+    
+    # Create study
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=100, timeout=600)  # 10 minutes timeout
+    
+    # Get best parameters and retrain model
+    best_params = study.best_params
+    model.set_params(**best_params)
+    model.fit(X_train, y_train)
+    
+    return model, best_params
+
+async def register_model_with_management_service(job_data, model, metrics, best_params, mlflow_run_id):
+    """Register the trained model with the Model Management Service"""
     try:
-        logger.info(f"Starting hyperparameter tuning {tuning_job_id}")
-        
-        base_job = training_jobs[tuning_request.base_job_id]
-        base_config = base_job["config"]
-        
-        best_score = 0
-        best_params = None
-        
-        for trial in range(tuning_request.max_trials):
-            # Generate random hyperparameters from search space
-            trial_params = {}
-            for param, space in tuning_request.parameter_space.items():
-                if isinstance(space, list):
-                    trial_params[param] = np.random.choice(space)
-                elif isinstance(space, dict):
-                    if space.get("type") == "uniform":
-                        trial_params[param] = np.random.uniform(space["low"], space["high"])
-                    elif space.get("type") == "int":
-                        trial_params[param] = np.random.randint(space["low"], space["high"])
+        async with httpx.AsyncClient() as client:
+            model_data = {
+                "name": job_data["job_name"],
+                "framework": "sklearn",
+                "model_type": job_data["model_type"],
+                "description": f"Model trained with {job_data['algorithm']}",
+                "tags": {
+                    "algorithm": job_data["algorithm"],
+                    "training_job_id": job_data["job_id"]
+                },
+                "mlflow_run_id": mlflow_run_id
+            }
             
-            # Simulate training with these parameters
-            await asyncio.sleep(2)  # Simulate training time
+            response = await client.post(
+                f"{MODEL_MANAGEMENT_URL}/models",
+                json=model_data
+            )
             
-            # Generate mock score
-            score = np.random.uniform(0.7, 0.95)
-            
-            if score > best_score:
-                best_score = score
-                best_params = trial_params.copy()
-            
-            logger.info(f"Hyperparameter tuning {tuning_job_id} - Trial {trial + 1}/{tuning_request.max_trials}, Score: {score:.4f}")
+            if response.status_code == 200:
+                model_info = response.json()
+                logger.info(f"✅ Model registered: {model_info['id']}")
+                return model_info["id"]
+            else:
+                logger.error(f"❌ Failed to register model: {response.text}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"❌ Error registering model: {e}")
+        return None
+
+# Metrics endpoint
+@app.get("/metrics")
+async def get_metrics():
+    """Get service metrics"""
+    try:
+        # Count jobs by status
+        status_counts = {}
+        for status in ["queued", "running", "completed", "failed"]:
+            count = sum(1 for job in training_jobs.values() if job["status"] == status)
+            status_counts[f"jobs_{status}"] = count
         
-        logger.info(f"Hyperparameter tuning {tuning_job_id} completed. Best score: {best_score:.4f}")
-        logger.info(f"Best parameters: {best_params}")
+        return {
+            "service": "model-training-service",
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_jobs": len(training_jobs),
+            **status_counts
+        }
         
     except Exception as e:
-        logger.error(f"Error in hyperparameter tuning {tuning_job_id}: {e}")
+        logger.error(f"❌ Error getting metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=int(os.getenv("PORT", 8080)),
-        reload=os.getenv("ENVIRONMENT") == "development"
+        port=SERVICE_PORT,
+        reload=True,
+        log_level="info"
     )

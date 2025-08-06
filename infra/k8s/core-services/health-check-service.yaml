@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-check-service
+  namespace: aic-platform
+  labels:
+    app: health-check-service
+    tier: core
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: health-check-service
+  template:
+    metadata:
+      labels:
+        app: health-check-service
+        tier: core
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: health-check-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: health-check-service
+        image: 002aic/health-check-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: health-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: url
+        - name: CHECK_INTERVAL
+          value: "30"
+        - name: TIMEOUT
+          value: "5000"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: health-check-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-check-service
+  namespace: aic-platform
+  labels:
+    app: health-check-service
+    tier: core
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: health-check-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: health-check-service
+  namespace: aic-platform
+  labels:
+    app: health-check-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-check-service-config
+  namespace: aic-platform
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    health_checks:
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      concurrent_checks: 10
+    alerting:
+      enabled: true
+      critical_service_threshold: 1
+    logging:
+      level: info
+      format: json

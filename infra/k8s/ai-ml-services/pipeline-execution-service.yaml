@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+  labels:
+    app: pipeline-execution-service
+    tier: ai-ml
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: pipeline-execution-service
+  template:
+    metadata:
+      labels:
+        app: pipeline-execution-service
+        tier: ai-ml
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: pipeline-execution-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: pipeline-execution-service
+        image: 002aic/pipeline-execution-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-database-secret
+              key: pipeline-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-redis-secret
+              key: url
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: AIRFLOW_WEBSERVER_URL
+          value: "http://airflow-webserver:8080"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: pipeline-storage
+          mountPath: /app/pipelines
+        - name: logs-storage
+          mountPath: /app/logs
+      volumes:
+      - name: config
+        configMap:
+          name: pipeline-execution-service-config
+      - name: pipeline-storage
+        persistentVolumeClaim:
+          claimName: pipeline-execution-pvc
+      - name: logs-storage
+        persistentVolumeClaim:
+          claimName: pipeline-logs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+  labels:
+    app: pipeline-execution-service
+    tier: ai-ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: pipeline-execution-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+  labels:
+    app: pipeline-execution-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pipeline-execution-service
+subjects:
+- kind: ServiceAccount
+  name: pipeline-execution-service
+  namespace: aic-ai-ml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pipeline-execution-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pipeline-logs-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-execution-service-config
+  namespace: aic-ai-ml
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    execution:
+      max_concurrent_pipelines: 10
+      pipeline_timeout: 7200s
+      retry_attempts: 3
+      cleanup_after_days: 7
+    orchestration:
+      engine: "airflow"
+      scheduler_interval: 30s
+      max_active_runs: 5
+    pipeline_types:
+      - name: "data_preprocessing"
+        enabled: true
+        max_runtime: 3600s
+      - name: "model_training"
+        enabled: true
+        max_runtime: 7200s
+      - name: "model_evaluation"
+        enabled: true
+        max_runtime: 1800s
+      - name: "model_deployment"
+        enabled: true
+        max_runtime: 600s
+    storage:
+      pipeline_path: "/app/pipelines"
+      logs_path: "/app/logs"
+    logging:
+      level: info
+      format: json

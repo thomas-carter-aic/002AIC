@@ -1,0 +1,100 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configurations
+resources:
+  - ../../k8s/namespaces/
+  - ../../k8s/core-platform/
+  - ../../k8s/ai-ml-services/
+  - ../../k8s/data-services/
+  - ../../k8s/devops-services/
+  - ../../k8s/business-services/
+  - ../../k8s/infrastructure-services/
+
+# Common labels for staging environment
+commonLabels:
+  environment: staging
+  version: v0.9.0
+  managed-by: kustomize
+
+# Namespace prefix for staging
+namespace: ""
+
+# Image transformations for staging
+images:
+  - name: auth-service
+    newTag: v0.9.0-staging
+  - name: api-gateway-service
+    newTag: v0.9.0-staging
+  - name: user-management-service
+    newTag: v0.9.0-staging
+  - name: billing-service
+    newTag: v0.9.0-staging
+  - name: model-training-service
+    newTag: v0.9.0-staging
+  - name: model-inference-service
+    newTag: v0.9.0-staging
+  - name: data-ingestion-service
+    newTag: v0.9.0-staging
+  - name: workflow-orchestration-service
+    newTag: v0.9.0-staging
+  - name: notification-service
+    newTag: v0.9.0-staging
+  - name: monitoring-service
+    newTag: v0.9.0-staging
+
+# Configuration transformations for staging
+configMapGenerator:
+  - name: staging-config
+    literals:
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=staging
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - CACHE_TTL=1800
+      - MAX_CONNECTIONS=500
+      - RATE_LIMIT=5000
+      - BACKUP_ENABLED=true
+      - ENCRYPTION_ENABLED=true
+      - COMPLIANCE_MODE=relaxed
+
+# Secret transformations for staging
+secretGenerator:
+  - name: staging-secrets
+    literals:
+      - DATABASE_URL=postgresql://staging-user:REDACTED@staging-db:5432/nexus_staging
+      - REDIS_URL=redis://staging-redis:6379/0
+      - JWT_SECRET=REDACTED
+      - API_KEY=REDACTED
+      - ENCRYPTION_KEY=REDACTED
+
+# Replica transformations for staging (smaller scale)
+replicas:
+  - name: auth-service
+    count: 2
+  - name: api-gateway-service
+    count: 2
+  - name: user-management-service
+    count: 2
+  - name: billing-service
+    count: 2
+  - name: notification-service
+    count: 2
+  - name: health-check-service
+    count: 1
+  - name: monitoring-service
+    count: 1
+  - name: analytics-service
+    count: 1
+  - name: model-training-service
+    count: 1
+  - name: model-inference-service
+    count: 1
+  - name: data-ingestion-service
+    count: 1
+  - name: workflow-orchestration-service
+    count: 1
+
+# Resource patches for staging (reduced resources)
+patchesStrategicMerge:
+  - patches/staging-resources.yaml

@@ -1,0 +1,219 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-service
+  namespace: aic-business
+  labels:
+    app: workflow-service
+    tier: business
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: workflow-service
+  template:
+    metadata:
+      labels:
+        app: workflow-service
+        tier: business
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: workflow-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: workflow-service
+        image: 002aic/workflow-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-database-secret
+              key: workflow-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-redis-secret
+              key: url
+        - name: TEMPORAL_HOST
+          value: "temporal-frontend.aic-business.svc.cluster.local:7233"
+        - name: PIPELINE_EXECUTION_SERVICE_URL
+          value: "http://pipeline-execution-service.aic-ai-ml.svc.cluster.local"
+        - name: NOTIFICATION_SERVICE_URL
+          value: "http://notification-service.aic-platform.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: workflow-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: workflow-service-config
+      - name: workflow-storage
+        persistentVolumeClaim:
+          claimName: workflow-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflow-service
+  namespace: aic-business
+  labels:
+    app: workflow-service
+    tier: business
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: workflow-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workflow-service
+  namespace: aic-business
+  labels:
+    app: workflow-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workflow-pvc
+  namespace: aic-business
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-service-config
+  namespace: aic-business
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    workflow:
+      max_concurrent_workflows: 100
+      workflow_timeout: 3600s
+      retry_policy:
+        max_attempts: 3
+        backoff_coefficient: 2.0
+        initial_interval: "1s"
+        maximum_interval: "100s"
+      task_queue: "002aic-workflows"
+    engines:
+      temporal:
+        enabled: true
+        namespace: "002aic"
+        retention_days: 30
+      airflow:
+        enabled: false
+        dag_folder: "/app/dags"
+      prefect:
+        enabled: false
+        project: "002aic"
+    workflow_types:
+      - name: "user_onboarding"
+        description: "New user onboarding workflow"
+        timeout: 1800s
+        retry_policy: "default"
+      - name: "subscription_management"
+        description: "Subscription lifecycle management"
+        timeout: 3600s
+        retry_policy: "aggressive"
+      - name: "data_processing"
+        description: "Data processing and ML pipeline workflows"
+        timeout: 7200s
+        retry_policy: "conservative"
+      - name: "billing_cycle"
+        description: "Monthly billing and invoicing workflow"
+        timeout: 1800s
+        retry_policy: "default"
+      - name: "support_ticket"
+        description: "Customer support ticket workflow"
+        timeout: 86400s
+        retry_policy: "patient"
+    integrations:
+      slack:
+        enabled: true
+        webhook_notifications: true
+      email:
+        enabled: true
+        smtp_notifications: true
+      webhooks:
+        enabled: true
+        retry_failed_webhooks: true
+      apis:
+        enabled: true
+        rate_limiting: true
+    monitoring:
+      metrics_enabled: true
+      workflow_analytics: true
+      performance_tracking: true
+      error_tracking: true
+    security:
+      workflow_isolation: true
+      secret_management: true
+      audit_logging: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

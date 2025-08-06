@@ -1,0 +1,492 @@
+name: DevOps Services CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/backend-services/runtime-management-service/**'
+      - 'apps/backend-services/monitoring-service/**'
+      - 'apps/backend-services/file-storage-service/**'
+      - 'apps/backend-services/search-service/**'
+      - 'apps/backend-services/deployment-service/**'
+      - 'infra/k8s/devops-services/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/backend-services/runtime-management-service/**'
+      - 'apps/backend-services/monitoring-service/**'
+      - 'apps/backend-services/file-storage-service/**'
+      - 'apps/backend-services/search-service/**'
+      - 'apps/backend-services/deployment-service/**'
+      - 'infra/k8s/devops-services/**'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: 002aic
+
+jobs:
+  # Detect which DevOps services changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime-management-service: ${{ steps.changes.outputs.runtime-management-service }}
+      monitoring-service: ${{ steps.changes.outputs.monitoring-service }}
+      file-storage-service: ${{ steps.changes.outputs.file-storage-service }}
+      search-service: ${{ steps.changes.outputs.search-service }}
+      deployment-service: ${{ steps.changes.outputs.deployment-service }}
+      k8s-manifests: ${{ steps.changes.outputs.k8s-manifests }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          runtime-management-service:
+            - 'apps/backend-services/runtime-management-service/**'
+          monitoring-service:
+            - 'apps/backend-services/monitoring-service/**'
+          file-storage-service:
+            - 'apps/backend-services/file-storage-service/**'
+          search-service:
+            - 'apps/backend-services/search-service/**'
+          deployment-service:
+            - 'apps/backend-services/deployment-service/**'
+          k8s-manifests:
+            - 'infra/k8s/devops-services/**'
+
+  # Security and infrastructure scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.runtime-management-service == 'true' ||
+      needs.detect-changes.outputs.monitoring-service == 'true' ||
+      needs.detect-changes.outputs.file-storage-service == 'true' ||
+      needs.detect-changes.outputs.search-service == 'true' ||
+      needs.detect-changes.outputs.deployment-service == 'true'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    # Additional security scan for deployment service
+    - name: Infrastructure Security Check
+      if: needs.detect-changes.outputs.deployment-service == 'true'
+      run: |
+        echo "Running infrastructure security checks for deployment service..."
+        # Add specific infrastructure security validation scripts here
+        python scripts/security/infra_security_check.py apps/backend-services/deployment-service/
+
+  # Build and test Go DevOps services
+  build-go-services:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.runtime-management-service == 'true' ||
+      needs.detect-changes.outputs.file-storage-service == 'true' ||
+      needs.detect-changes.outputs.deployment-service == 'true'
+    strategy:
+      matrix:
+        service: [runtime-management-service, file-storage-service, deployment-service]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check if service changed
+      id: check-service
+      run: |
+        if [ "${{ needs.detect-changes.outputs[matrix.service] }}" == "true" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Set up Go
+      if: steps.check-service.outputs.changed == 'true'
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Cache Go modules
+      if: steps.check-service.outputs.changed == 'true'
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: go mod download
+    
+    - name: Run linting
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        golangci-lint run
+    
+    - name: Run tests
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: go test -v -race -coverprofile=coverage.out ./...
+    
+    - name: Upload coverage reports
+      if: steps.check-service.outputs.changed == 'true'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/backend-services/${{ matrix.service }}/coverage.out
+        flags: ${{ matrix.service }}
+    
+    - name: Build binary
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+    
+    - name: Build Docker image
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} .
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest .
+    
+    - name: Log in to Container Registry
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Push Docker image
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  # Build and test Python DevOps services
+  build-python-services:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.monitoring-service == 'true' ||
+      needs.detect-changes.outputs.search-service == 'true'
+    strategy:
+      matrix:
+        service: [monitoring-service, search-service]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check if service changed
+      id: check-service
+      run: |
+        if [ "${{ needs.detect-changes.outputs[matrix.service] }}" == "true" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Set up Python
+      if: steps.check-service.outputs.changed == 'true'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Cache Python dependencies
+      if: steps.check-service.outputs.changed == 'true'
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov black flake8 mypy
+    
+    - name: Run linting
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        black --check .
+        flake8 .
+        mypy .
+    
+    - name: Run tests
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        pytest --cov=. --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage reports
+      if: steps.check-service.outputs.changed == 'true'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/backend-services/${{ matrix.service }}/coverage.xml
+        flags: ${{ matrix.service }}
+    
+    - name: Build Docker image
+      if: steps.check-service.outputs.changed == 'true'
+      working-directory: ./apps/backend-services/${{ matrix.service }}
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} .
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest .
+    
+    - name: Log in to Container Registry
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Push Docker image
+      if: steps.check-service.outputs.changed == 'true' && github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  # DevOps-specific integration tests
+  devops-integration-tests:
+    runs-on: ubuntu-latest
+    needs: [build-go-services, build-python-services]
+    if: always() && (needs.build-go-services.result == 'success' || needs.build-python-services.result == 'success')
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      elasticsearch:
+        image: elasticsearch:8.10.2
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: false
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minio123456
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 30s
+          --health-timeout 20s
+          --health-retries 3
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install test dependencies
+      run: |
+        pip install pytest requests elasticsearch boto3 prometheus-client
+    
+    - name: Wait for services to be ready
+      run: |
+        sleep 30
+        curl -f http://localhost:9200/_cluster/health || exit 1
+        curl -f http://localhost:9000/minio/health/live || exit 1
+    
+    - name: Run DevOps integration tests
+      working-directory: ./test/integration
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db?sslmode=disable
+        REDIS_URL: redis://localhost:6379
+        ELASTICSEARCH_URL: http://localhost:9200
+        MINIO_ENDPOINT: http://localhost:9000
+        MINIO_ACCESS_KEY: minioadmin
+        MINIO_SECRET_KEY: minio123456
+      run: |
+        python -m pytest devops-services/ -v --tb=short
+
+  # Infrastructure and performance tests
+  infrastructure-tests:
+    runs-on: ubuntu-latest
+    needs: [build-go-services, build-python-services]
+    if: |
+      needs.build-go-services.result == 'success' ||
+      needs.build-python-services.result == 'success'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install infrastructure testing tools
+      run: |
+        pip install locust pytest-benchmark kubernetes
+    
+    - name: Run infrastructure tests
+      run: |
+        python test/infrastructure/test_devops_services.py
+    
+    - name: Run performance tests
+      run: |
+        python test/performance/test_devops_performance.py
+    
+    - name: Generate performance report
+      run: |
+        python test/performance/generate_report.py
+    
+    - name: Upload performance artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-report
+        path: test/performance/reports/
+
+  # Deploy to staging
+  deploy-devops-staging:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-go-services, build-python-services, devops-integration-tests, infrastructure-tests]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/develop' &&
+      (needs.build-go-services.result == 'success' || needs.build-python-services.result == 'success') &&
+      needs.devops-integration-tests.result == 'success'
+    environment: staging
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Update image tags in manifests
+      run: |
+        sed -i "s|002aic/runtime-management-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/runtime-management-service:${{ github.sha }}|g" infra/k8s/devops-services/runtime-management-service.yaml
+        sed -i "s|002aic/monitoring-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/monitoring-service:${{ github.sha }}|g" infra/k8s/devops-services/monitoring-service.yaml
+        sed -i "s|002aic/file-storage-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/file-storage-service:${{ github.sha }}|g" infra/k8s/devops-services/file-storage-service.yaml
+        sed -i "s|002aic/search-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/search-service:${{ github.sha }}|g" infra/k8s/devops-services/search-service.yaml
+        sed -i "s|002aic/deployment-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/deployment-service:${{ github.sha }}|g" infra/k8s/devops-services/deployment-service.yaml
+    
+    - name: Deploy DevOps services to staging
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f infra/k8s/devops-services/ -n aic-devops-staging
+        kubectl rollout status deployment --all -n aic-devops-staging --timeout=600s
+
+  # Deploy to production
+  deploy-devops-production:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-go-services, build-python-services, devops-integration-tests, infrastructure-tests]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/main' &&
+      (needs.build-go-services.result == 'success' || needs.build-python-services.result == 'success') &&
+      needs.devops-integration-tests.result == 'success' &&
+      needs.infrastructure-tests.result == 'success'
+    environment: production
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Update image tags in manifests
+      run: |
+        sed -i "s|002aic/runtime-management-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/runtime-management-service:${{ github.sha }}|g" infra/k8s/devops-services/runtime-management-service.yaml
+        sed -i "s|002aic/monitoring-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/monitoring-service:${{ github.sha }}|g" infra/k8s/devops-services/monitoring-service.yaml
+        sed -i "s|002aic/file-storage-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/file-storage-service:${{ github.sha }}|g" infra/k8s/devops-services/file-storage-service.yaml
+        sed -i "s|002aic/search-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/search-service:${{ github.sha }}|g" infra/k8s/devops-services/search-service.yaml
+        sed -i "s|002aic/deployment-service:latest|${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/deployment-service:${{ github.sha }}|g" infra/k8s/devops-services/deployment-service.yaml
+    
+    - name: Deploy DevOps services to production
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f infra/k8s/devops-services/ -n aic-devops
+        kubectl rollout status deployment --all -n aic-devops --timeout=600s
+    
+    - name: Run DevOps services smoke tests
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Wait for services to be ready
+        sleep 60
+        
+        # Test DevOps services through API Gateway
+        GATEWAY_IP=$(kubectl get service api-gateway-service -n aic-platform -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Run basic health checks for DevOps services
+        curl -f http://$GATEWAY_IP/v1/devops/runtime-management/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/devops/monitoring/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/devops/file-storage/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/devops/search/health || exit 1
+        curl -f http://$GATEWAY_IP/v1/devops/deployment/health || exit 1
+        
+        # Test file storage endpoints
+        curl -f http://$GATEWAY_IP/v1/files/health || exit 1
+        
+        # Test search endpoints
+        curl -f http://$GATEWAY_IP/v1/search/health || exit 1
+        
+        # Test monitoring endpoints
+        curl -f http://$GATEWAY_IP/v1/monitoring/health || exit 1
+
+  # Notify on completion
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-devops-staging, deploy-devops-production]
+    if: always()
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#devops-deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow

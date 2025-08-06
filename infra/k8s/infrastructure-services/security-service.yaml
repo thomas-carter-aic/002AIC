@@ -1,0 +1,217 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-service
+  namespace: aic-infrastructure
+  labels:
+    app: security-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: security-service
+  template:
+    metadata:
+      labels:
+        app: security-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: security-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: security-service
+        image: 002aic/security-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: security-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: VAULT_ADDR
+          value: "http://vault-service.aic-infrastructure.svc.cluster.local:8200"
+        - name: VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-security-secret
+              key: vault-token
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: security-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: security-service-config
+      - name: security-storage
+        persistentVolumeClaim:
+          claimName: security-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-service
+  namespace: aic-infrastructure
+  labels:
+    app: security-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: security-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: security-service
+  namespace: aic-infrastructure
+  labels:
+    app: security-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: security-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    security:
+      threat_detection: true
+      vulnerability_scanning: true
+      compliance_monitoring: true
+      incident_response: true
+      zero_trust_architecture: true
+    threat_detection:
+      ml_based_detection: true
+      behavioral_analysis: true
+      anomaly_detection: true
+      real_time_monitoring: true
+      threat_intelligence: true
+    vulnerability_management:
+      automated_scanning: true
+      scan_frequency: "daily"
+      severity_thresholds:
+        critical: 9.0
+        high: 7.0
+        medium: 4.0
+        low: 0.1
+      patch_management: true
+    access_control:
+      zero_trust: true
+      multi_factor_authentication: true
+      privileged_access_management: true
+      session_management: true
+      identity_governance: true
+    encryption:
+      data_at_rest: true
+      data_in_transit: true
+      key_management: true
+      certificate_management: true
+      quantum_resistant: true
+    compliance:
+      frameworks:
+        - "NIST"
+        - "ISO_27001"
+        - "SOC2"
+        - "GDPR"
+        - "HIPAA"
+        - "PCI_DSS"
+      automated_assessments: true
+      continuous_monitoring: true
+      reporting: true
+    incident_response:
+      automated_response: true
+      playbooks: true
+      forensics: true
+      communication: true
+      recovery: true
+    monitoring:
+      security_metrics: true
+      threat_dashboards: true
+      compliance_reporting: true
+      risk_assessment: true
+    integrations:
+      siem: true
+      soar: true
+      threat_intelligence: true
+      vulnerability_scanners: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

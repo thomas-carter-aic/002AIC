@@ -1,0 +1,231 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-service
+  namespace: aic-business
+  labels:
+    app: billing-service
+    tier: business
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: billing-service
+  template:
+    metadata:
+      labels:
+        app: billing-service
+        tier: business
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: billing-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: billing-service
+        image: 002aic/billing-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-database-secret
+              key: billing-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-redis-secret
+              key: url
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: business-payment-secret
+              key: stripe-secret-key
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: business-payment-secret
+              key: stripe-webhook-secret
+        - name: PAYPAL_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: business-payment-secret
+              key: paypal-client-id
+        - name: PAYPAL_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: business-payment-secret
+              key: paypal-client-secret
+        - name: USER_MANAGEMENT_SERVICE_URL
+          value: "http://user-management-service.aic-data.svc.cluster.local"
+        - name: ANALYTICS_SERVICE_URL
+          value: "http://analytics-service.aic-data.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: billing-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: billing-service-config
+      - name: billing-storage
+        persistentVolumeClaim:
+          claimName: billing-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-service
+  namespace: aic-business
+  labels:
+    app: billing-service
+    tier: business
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: billing-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: billing-service
+  namespace: aic-business
+  labels:
+    app: billing-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: billing-pvc
+  namespace: aic-business
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-service-config
+  namespace: aic-business
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    billing:
+      currency: "USD"
+      tax_calculation: true
+      invoice_generation: true
+      payment_retry_attempts: 3
+      payment_retry_delay: "24h"
+      dunning_management: true
+    subscription_plans:
+      - name: "free"
+        price: 0
+        features: ["basic_ai", "5gb_storage", "community_support"]
+        limits:
+          api_calls_per_month: 10000
+          storage_gb: 5
+          users: 5
+      - name: "professional"
+        price: 99
+        features: ["advanced_ai", "100gb_storage", "email_support", "custom_models"]
+        limits:
+          api_calls_per_month: 100000
+          storage_gb: 100
+          users: 50
+      - name: "enterprise"
+        price: 999
+        features: ["unlimited_ai", "1tb_storage", "priority_support", "custom_deployment"]
+        limits:
+          api_calls_per_month: 1000000
+          storage_gb: 1000
+          users: 500
+    payment_providers:
+      stripe:
+        enabled: true
+        webhook_endpoint: "/webhooks/stripe"
+        supported_methods: ["card", "bank_transfer", "ach"]
+      paypal:
+        enabled: true
+        webhook_endpoint: "/webhooks/paypal"
+        supported_methods: ["paypal", "credit_card"]
+      bank_transfer:
+        enabled: true
+        supported_currencies: ["USD", "EUR", "GBP"]
+    invoicing:
+      auto_generate: true
+      send_email: true
+      payment_terms_days: 30
+      late_fee_percentage: 1.5
+      template: "default"
+    compliance:
+      pci_dss: true
+      gdpr: true
+      sox: true
+      revenue_recognition: "ASC_606"
+    integrations:
+      quickbooks: true
+      salesforce: true
+      hubspot: true
+      slack: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

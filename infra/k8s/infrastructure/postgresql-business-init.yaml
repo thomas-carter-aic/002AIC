@@ -1,0 +1,379 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-business-init-scripts
+  namespace: aic-platform
+data:
+  05-create-business-databases.sql: |
+    -- Create databases for Business services
+    CREATE DATABASE billing_db;
+    CREATE DATABASE workflow_db;
+    CREATE DATABASE integration_db;
+    CREATE DATABASE support_db;
+    CREATE DATABASE marketplace_db;
+    CREATE DATABASE temporal;
+    CREATE DATABASE temporal_visibility;
+    
+    -- Create users for Business services
+    CREATE USER billing_user WITH PASSWORD 'billing_password';
+    CREATE USER workflow_user WITH PASSWORD 'workflow_password';
+    CREATE USER integration_user WITH PASSWORD 'integration_password';
+    CREATE USER support_user WITH PASSWORD 'support_password';
+    CREATE USER marketplace_user WITH PASSWORD 'marketplace_password';
+    CREATE USER temporal_user WITH PASSWORD 'temporal_password';
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON DATABASE billing_db TO billing_user;
+    GRANT ALL PRIVILEGES ON DATABASE workflow_db TO workflow_user;
+    GRANT ALL PRIVILEGES ON DATABASE integration_db TO integration_user;
+    GRANT ALL PRIVILEGES ON DATABASE support_db TO support_user;
+    GRANT ALL PRIVILEGES ON DATABASE marketplace_db TO marketplace_user;
+    GRANT ALL PRIVILEGES ON DATABASE temporal TO temporal_user;
+    GRANT ALL PRIVILEGES ON DATABASE temporal_visibility TO temporal_user;
+    
+    -- Create extensions for Business services
+    \c billing_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    -- Billing service tables
+    CREATE TABLE IF NOT EXISTS customers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        organization_id UUID NOT NULL,
+        stripe_customer_id VARCHAR(255),
+        paypal_customer_id VARCHAR(255),
+        billing_email VARCHAR(255) NOT NULL,
+        payment_method_id VARCHAR(255),
+        tax_id VARCHAR(100),
+        billing_address JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        plan_name VARCHAR(100) NOT NULL,
+        status VARCHAR(50) DEFAULT 'active',
+        current_period_start TIMESTAMP NOT NULL,
+        current_period_end TIMESTAMP NOT NULL,
+        trial_end TIMESTAMP,
+        cancel_at_period_end BOOLEAN DEFAULT FALSE,
+        stripe_subscription_id VARCHAR(255),
+        paypal_subscription_id VARCHAR(255),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS invoices (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        subscription_id UUID REFERENCES subscriptions(id),
+        invoice_number VARCHAR(100) UNIQUE NOT NULL,
+        status VARCHAR(50) DEFAULT 'draft',
+        amount_due DECIMAL(10,2) NOT NULL,
+        amount_paid DECIMAL(10,2) DEFAULT 0,
+        currency VARCHAR(3) DEFAULT 'USD',
+        due_date DATE,
+        paid_at TIMESTAMP,
+        stripe_invoice_id VARCHAR(255),
+        paypal_invoice_id VARCHAR(255),
+        line_items JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS payments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        invoice_id UUID REFERENCES invoices(id),
+        amount DECIMAL(10,2) NOT NULL,
+        currency VARCHAR(3) DEFAULT 'USD',
+        status VARCHAR(50) DEFAULT 'pending',
+        payment_method VARCHAR(50) NOT NULL,
+        provider VARCHAR(50) NOT NULL,
+        provider_payment_id VARCHAR(255),
+        failure_reason TEXT,
+        processed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    -- Create indexes for billing
+    CREATE INDEX idx_customers_organization_id ON customers(organization_id);
+    CREATE INDEX idx_customers_stripe_customer_id ON customers(stripe_customer_id);
+    CREATE INDEX idx_subscriptions_customer_id ON subscriptions(customer_id);
+    CREATE INDEX idx_subscriptions_status ON subscriptions(status);
+    CREATE INDEX idx_invoices_customer_id ON invoices(customer_id);
+    CREATE INDEX idx_invoices_status ON invoices(status);
+    CREATE INDEX idx_payments_customer_id ON payments(customer_id);
+    CREATE INDEX idx_payments_status ON payments(status);
+    
+    \c workflow_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    
+    -- Workflow service tables
+    CREATE TABLE IF NOT EXISTS workflow_definitions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        version INTEGER DEFAULT 1,
+        workflow_type VARCHAR(100) NOT NULL,
+        definition JSONB NOT NULL,
+        input_schema JSONB,
+        output_schema JSONB,
+        timeout_seconds INTEGER DEFAULT 3600,
+        retry_policy JSONB DEFAULT '{}',
+        status VARCHAR(20) DEFAULT 'active',
+        created_by UUID NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS workflow_executions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        workflow_definition_id UUID NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+        execution_id VARCHAR(255) UNIQUE NOT NULL,
+        run_id VARCHAR(255) NOT NULL,
+        status VARCHAR(50) DEFAULT 'running',
+        input JSONB,
+        output JSONB,
+        error_message TEXT,
+        started_at TIMESTAMP DEFAULT NOW(),
+        completed_at TIMESTAMP,
+        duration_seconds INTEGER
+    );
+    
+    CREATE TABLE IF NOT EXISTS workflow_tasks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+        task_name VARCHAR(255) NOT NULL,
+        task_type VARCHAR(100) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        input JSONB,
+        output JSONB,
+        error_message TEXT,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        duration_seconds INTEGER
+    );
+    
+    -- Create indexes for workflow
+    CREATE INDEX idx_workflow_definitions_name ON workflow_definitions(name);
+    CREATE INDEX idx_workflow_definitions_type ON workflow_definitions(workflow_type);
+    CREATE INDEX idx_workflow_executions_definition_id ON workflow_executions(workflow_definition_id);
+    CREATE INDEX idx_workflow_executions_status ON workflow_executions(status);
+    CREATE INDEX idx_workflow_tasks_execution_id ON workflow_tasks(execution_id);
+    CREATE INDEX idx_workflow_tasks_status ON workflow_tasks(status);
+    
+    \c integration_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    
+    -- Integration service tables
+    CREATE TABLE IF NOT EXISTS integrations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        provider VARCHAR(100) NOT NULL,
+        organization_id UUID NOT NULL,
+        configuration JSONB NOT NULL,
+        credentials JSONB NOT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        last_sync TIMESTAMP,
+        sync_frequency INTEGER DEFAULT 3600,
+        error_count INTEGER DEFAULT 0,
+        last_error TEXT,
+        created_by UUID NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS sync_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        integration_id UUID NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
+        job_type VARCHAR(50) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        records_processed INTEGER DEFAULT 0,
+        records_failed INTEGER DEFAULT 0,
+        error_message TEXT,
+        started_at TIMESTAMP DEFAULT NOW(),
+        completed_at TIMESTAMP,
+        duration_seconds INTEGER
+    );
+    
+    CREATE TABLE IF NOT EXISTS data_mappings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        integration_id UUID NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
+        source_object VARCHAR(100) NOT NULL,
+        target_object VARCHAR(100) NOT NULL,
+        field_mappings JSONB NOT NULL,
+        transformation_rules JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    -- Create indexes for integration
+    CREATE INDEX idx_integrations_organization_id ON integrations(organization_id);
+    CREATE INDEX idx_integrations_provider ON integrations(provider);
+    CREATE INDEX idx_integrations_status ON integrations(status);
+    CREATE INDEX idx_sync_jobs_integration_id ON sync_jobs(integration_id);
+    CREATE INDEX idx_sync_jobs_status ON sync_jobs(status);
+    CREATE INDEX idx_data_mappings_integration_id ON data_mappings(integration_id);
+    
+    \c support_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    -- Support service tables
+    CREATE TABLE IF NOT EXISTS tickets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticket_number VARCHAR(20) UNIQUE NOT NULL,
+        subject VARCHAR(500) NOT NULL,
+        description TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'open',
+        priority VARCHAR(20) DEFAULT 'medium',
+        category VARCHAR(100),
+        customer_id UUID NOT NULL,
+        assigned_to UUID,
+        organization_id UUID NOT NULL,
+        channel VARCHAR(50) DEFAULT 'email',
+        sentiment_score DECIMAL(3,2),
+        satisfaction_rating INTEGER,
+        resolution_time_seconds INTEGER,
+        first_response_at TIMESTAMP,
+        resolved_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS ticket_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+        sender_id UUID,
+        sender_type VARCHAR(20) NOT NULL,
+        message_type VARCHAR(20) DEFAULT 'text',
+        content TEXT NOT NULL,
+        attachments JSONB DEFAULT '[]',
+        is_internal BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS knowledge_articles (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title VARCHAR(500) NOT NULL,
+        content TEXT NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        tags TEXT[],
+        status VARCHAR(20) DEFAULT 'published',
+        view_count INTEGER DEFAULT 0,
+        helpful_count INTEGER DEFAULT 0,
+        not_helpful_count INTEGER DEFAULT 0,
+        author_id UUID NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    -- Create indexes for support
+    CREATE INDEX idx_tickets_customer_id ON tickets(customer_id);
+    CREATE INDEX idx_tickets_organization_id ON tickets(organization_id);
+    CREATE INDEX idx_tickets_status ON tickets(status);
+    CREATE INDEX idx_tickets_priority ON tickets(priority);
+    CREATE INDEX idx_tickets_created_at ON tickets(created_at);
+    CREATE INDEX idx_ticket_messages_ticket_id ON ticket_messages(ticket_id);
+    CREATE INDEX idx_knowledge_articles_category ON knowledge_articles(category);
+    CREATE INDEX idx_knowledge_articles_tags ON knowledge_articles USING GIN(tags);
+    
+    \c marketplace_db;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    -- Marketplace service tables
+    CREATE TABLE IF NOT EXISTS listings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title VARCHAR(500) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        subcategory VARCHAR(100),
+        listing_type VARCHAR(50) NOT NULL,
+        price DECIMAL(10,2) DEFAULT 0,
+        pricing_model VARCHAR(50) DEFAULT 'one_time',
+        seller_id UUID NOT NULL,
+        organization_id UUID NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        featured BOOLEAN DEFAULT FALSE,
+        download_count INTEGER DEFAULT 0,
+        rating_average DECIMAL(3,2) DEFAULT 0,
+        rating_count INTEGER DEFAULT 0,
+        tags TEXT[],
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS listing_assets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        listing_id UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+        asset_type VARCHAR(50) NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
+        file_size BIGINT NOT NULL,
+        file_hash VARCHAR(64) NOT NULL,
+        storage_path VARCHAR(500) NOT NULL,
+        download_url VARCHAR(500),
+        version VARCHAR(50) DEFAULT '1.0.0',
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS reviews (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        listing_id UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+        reviewer_id UUID NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        title VARCHAR(200),
+        comment TEXT,
+        verified_purchase BOOLEAN DEFAULT FALSE,
+        helpful_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE TABLE IF NOT EXISTS purchases (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        listing_id UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+        buyer_id UUID NOT NULL,
+        seller_id UUID NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        currency VARCHAR(3) DEFAULT 'USD',
+        commission_amount DECIMAL(10,2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        payment_provider VARCHAR(50),
+        payment_id VARCHAR(255),
+        license_key VARCHAR(255),
+        download_expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    -- Create indexes for marketplace
+    CREATE INDEX idx_listings_category ON listings(category);
+    CREATE INDEX idx_listings_seller_id ON listings(seller_id);
+    CREATE INDEX idx_listings_status ON listings(status);
+    CREATE INDEX idx_listings_featured ON listings(featured);
+    CREATE INDEX idx_listings_tags ON listings USING GIN(tags);
+    CREATE INDEX idx_listing_assets_listing_id ON listing_assets(listing_id);
+    CREATE INDEX idx_reviews_listing_id ON reviews(listing_id);
+    CREATE INDEX idx_reviews_reviewer_id ON reviews(reviewer_id);
+    CREATE INDEX idx_purchases_listing_id ON purchases(listing_id);
+    CREATE INDEX idx_purchases_buyer_id ON purchases(buyer_id);
+    
+    -- Create Temporal database schema
+    \c temporal;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    
+    \c temporal_visibility;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

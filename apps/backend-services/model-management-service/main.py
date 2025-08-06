@@ -1,293 +1,673 @@
 """
-Model Management Service - Python
-Core MLOps service for managing AI/ML models in the 002AIC platform
-Handles model lifecycle, versioning, deployment, and monitoring
+Nexus Platform - Model Management Service
+Handles ML model lifecycle, versioning, and metadata management
 """
 
+import os
+import asyncio
+import logging
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
+
+import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-import uvicorn
-import os
-import logging
-from datetime import datetime
-import asyncio
 import mlflow
-import mlflow.tracking
-from mlflow.tracking import MlflowClient
+import mlflow.sklearn
+import mlflow.tensorflow
+import mlflow.pytorch
+from sqlalchemy import create_engine, Column, String, DateTime, Text, Integer, Float, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+import redis
+import json
+import httpx
 
-# Import our auth middleware
-import sys
-sys.path.append('/home/oss/002AIC/libs/auth-middleware/python')
-from auth_middleware import FastAPIAuthMiddleware, AuthConfig
+# Configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://nexus:nexus-password@postgres:5432/nexus")
+REDIS_URL = os.getenv("REDIS_URL", "redis://:nexus-password@redis:6379/0")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow-server:5000")
+SERVICE_PORT = int(os.getenv("PORT", "8086"))
 
-# Configure logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="002AIC Model Management Service",
-    description="MLOps service for AI/ML model lifecycle management",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
+# Database setup
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Redis setup
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
-# Initialize auth middleware
-auth_config = AuthConfig(
-    authorization_service_url=os.getenv("AUTHORIZATION_SERVICE_URL", "http://authorization-service:8080"),
-    jwt_public_key_url=os.getenv("JWT_PUBLIC_KEY_URL", "http://keycloak:8080/realms/002aic/protocol/openid-connect/certs"),
-    jwt_issuer=os.getenv("JWT_ISSUER", "http://keycloak:8080/realms/002aic"),
-    jwt_audience=os.getenv("JWT_AUDIENCE", "002aic-api"),
-    service_name="model-management-service"
-)
+# MLflow setup
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-auth = FastAPIAuthMiddleware(auth_config)
+# Database Models
+class ModelRecord(Base):
+    __tablename__ = "models"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False, index=True)
+    version = Column(String(50), nullable=False)
+    framework = Column(String(50), nullable=False)  # sklearn, tensorflow, pytorch, etc.
+    model_type = Column(String(100), nullable=False)  # classifier, regressor, etc.
+    description = Column(Text)
+    tags = Column(Text)  # JSON string
+    metrics = Column(Text)  # JSON string
+    parameters = Column(Text)  # JSON string
+    artifact_uri = Column(String(500))
+    mlflow_run_id = Column(String(255))
+    status = Column(String(50), default="training")  # training, ready, deployed, archived
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(String(255))
 
-# Initialize MLflow
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
-mlflow_client = MlflowClient()
+class ModelDeployment(Base):
+    __tablename__ = "model_deployments"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_id = Column(UUID(as_uuid=True), nullable=False)
+    deployment_name = Column(String(255), nullable=False)
+    endpoint_url = Column(String(500))
+    environment = Column(String(50), default="development")  # development, staging, production
+    status = Column(String(50), default="deploying")  # deploying, active, inactive, failed
+    replicas = Column(Integer, default=1)
+    cpu_request = Column(String(20), default="100m")
+    memory_request = Column(String(20), default="256Mi")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# Pydantic models
-class ModelMetadata(BaseModel):
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+# Pydantic Models
+class ModelCreate(BaseModel):
     name: str = Field(..., description="Model name")
-    version: str = Field(..., description="Model version")
-    description: Optional[str] = Field(None, description="Model description")
-    framework: str = Field(..., description="ML framework (tensorflow, pytorch, sklearn, etc.)")
-    model_type: str = Field(..., description="Model type (classification, regression, nlp, cv, etc.)")
-    tags: Dict[str, str] = Field(default_factory=dict, description="Model tags")
-    metrics: Dict[str, float] = Field(default_factory=dict, description="Model performance metrics")
+    framework: str = Field(..., description="ML framework (sklearn, tensorflow, pytorch)")
+    model_type: str = Field(..., description="Model type (classifier, regressor, etc.)")
+    description: Optional[str] = None
+    tags: Optional[Dict[str, str]] = None
+    mlflow_run_id: Optional[str] = None
 
-class ModelDeploymentConfig(BaseModel):
-    model_id: str = Field(..., description="Model ID to deploy")
-    deployment_name: str = Field(..., description="Deployment name")
-    environment: str = Field(..., description="Target environment (dev, staging, prod)")
-    scaling_config: Dict[str, Any] = Field(default_factory=dict, description="Scaling configuration")
-    resource_requirements: Dict[str, str] = Field(default_factory=dict, description="Resource requirements")
+class ModelUpdate(BaseModel):
+    description: Optional[str] = None
+    tags: Optional[Dict[str, str]] = None
+    status: Optional[str] = None
 
 class ModelResponse(BaseModel):
     id: str
     name: str
     version: str
+    framework: str
+    model_type: str
+    description: Optional[str]
+    tags: Optional[Dict[str, str]]
+    metrics: Optional[Dict[str, float]]
+    parameters: Optional[Dict[str, Any]]
+    artifact_uri: Optional[str]
     status: str
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any]
+    created_by: Optional[str]
+
+class DeploymentCreate(BaseModel):
+    model_id: str
+    deployment_name: str
+    environment: str = "development"
+    replicas: int = 1
+    cpu_request: str = "100m"
+    memory_request: str = "256Mi"
 
 class DeploymentResponse(BaseModel):
     id: str
     model_id: str
     deployment_name: str
-    status: str
     endpoint_url: Optional[str]
+    environment: str
+    status: str
+    replicas: int
     created_at: datetime
+    updated_at: datetime
+
+class PredictionRequest(BaseModel):
+    model_id: str
+    input_data: Dict[str, Any]
+    deployment_name: Optional[str] = None
+
+class PredictionResponse(BaseModel):
+    prediction: Any
+    model_id: str
+    model_version: str
+    prediction_id: str
+    timestamp: datetime
+
+# Dependency to get database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Model Management Service starting up...")
+    
+    # Test connections
+    try:
+        # Test database
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        logger.info("✅ Database connection successful")
+        
+        # Test Redis
+        redis_client.ping()
+        logger.info("✅ Redis connection successful")
+        
+        # Test MLflow
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        logger.info("✅ MLflow connection configured")
+        
+    except Exception as e:
+        logger.error(f"❌ Startup connection test failed: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Model Management Service shutting down...")
+
+# Create FastAPI app
+app = FastAPI(
+    title="Nexus Model Management Service",
+    description="AI/ML Model Lifecycle Management for Nexus Platform",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "service": "model-management-service",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0",
-        "mlflow_status": "connected" if mlflow_client else "disconnected"
-    }
-
-# Model management endpoints
-@app.get("/v1/models", response_model=List[ModelResponse])
-@auth.require_auth("model", "read")
-async def list_models(skip: int = 0, limit: int = 100):
-    """List all registered models"""
     try:
-        # Get models from MLflow
-        registered_models = mlflow_client.search_registered_models()
+        # Check database
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
         
-        models = []
-        for rm in registered_models[skip:skip+limit]:
-            latest_version = mlflow_client.get_latest_versions(rm.name, stages=["None", "Staging", "Production"])
-            if latest_version:
-                version = latest_version[0]
-                models.append(ModelResponse(
-                    id=f"{rm.name}:{version.version}",
-                    name=rm.name,
-                    version=version.version,
-                    status=version.current_stage,
-                    created_at=datetime.fromtimestamp(version.creation_timestamp / 1000),
-                    updated_at=datetime.fromtimestamp(version.last_updated_timestamp / 1000),
-                    metadata={
-                        "description": rm.description,
-                        "tags": dict(rm.tags) if rm.tags else {},
-                        "run_id": version.run_id
-                    }
-                ))
+        # Check Redis
+        redis_client.ping()
         
-        return models
+        return {
+            "status": "healthy",
+            "service": "model-management-service",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0"
+        }
     except Exception as e:
-        logger.error(f"Error listing models: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list models")
+        raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
-@app.post("/v1/models", response_model=ModelResponse)
-@auth.require_auth("model", "create")
-async def register_model(model_metadata: ModelMetadata):
-    """Register a new model"""
+# Model Management Endpoints
+@app.post("/models", response_model=ModelResponse)
+async def create_model(model: ModelCreate, db: Session = Depends(get_db)):
+    """Create a new model record"""
     try:
-        # Create registered model in MLflow
-        registered_model = mlflow_client.create_registered_model(
-            name=model_metadata.name,
-            description=model_metadata.description,
-            tags=model_metadata.tags
+        # Generate version
+        existing_models = db.query(ModelRecord).filter(ModelRecord.name == model.name).count()
+        version = f"v{existing_models + 1}"
+        
+        # Create model record
+        db_model = ModelRecord(
+            name=model.name,
+            version=version,
+            framework=model.framework,
+            model_type=model.model_type,
+            description=model.description,
+            tags=json.dumps(model.tags) if model.tags else None,
+            mlflow_run_id=model.mlflow_run_id,
+            created_by="system"  # TODO: Get from auth context
         )
         
-        # Create initial version
-        model_version = mlflow_client.create_model_version(
-            name=model_metadata.name,
-            source="placeholder",  # This would be the actual model artifact URI
-            run_id=None,
-            tags=model_metadata.tags,
-            description=f"Version {model_metadata.version}"
-        )
+        db.add(db_model)
+        db.commit()
+        db.refresh(db_model)
+        
+        # Cache in Redis
+        cache_key = f"model:{db_model.id}"
+        model_data = {
+            "id": str(db_model.id),
+            "name": db_model.name,
+            "version": db_model.version,
+            "status": db_model.status
+        }
+        redis_client.setex(cache_key, 3600, json.dumps(model_data))
+        
+        logger.info(f"✅ Created model: {model.name} {version}")
         
         return ModelResponse(
-            id=f"{registered_model.name}:{model_version.version}",
-            name=registered_model.name,
-            version=model_version.version,
-            status="None",
-            created_at=datetime.fromtimestamp(model_version.creation_timestamp / 1000),
-            updated_at=datetime.fromtimestamp(model_version.last_updated_timestamp / 1000),
-            metadata={
-                "description": registered_model.description,
-                "tags": dict(registered_model.tags) if registered_model.tags else {},
-                "framework": model_metadata.framework,
-                "model_type": model_metadata.model_type
-            }
+            id=str(db_model.id),
+            name=db_model.name,
+            version=db_model.version,
+            framework=db_model.framework,
+            model_type=db_model.model_type,
+            description=db_model.description,
+            tags=json.loads(db_model.tags) if db_model.tags else None,
+            metrics=json.loads(db_model.metrics) if db_model.metrics else None,
+            parameters=json.loads(db_model.parameters) if db_model.parameters else None,
+            artifact_uri=db_model.artifact_uri,
+            status=db_model.status,
+            created_at=db_model.created_at,
+            updated_at=db_model.updated_at,
+            created_by=db_model.created_by
         )
-    except Exception as e:
-        logger.error(f"Error registering model: {e}")
-        raise HTTPException(status_code=500, detail="Failed to register model")
-
-@app.get("/v1/models/{model_name}", response_model=ModelResponse)
-@auth.require_auth("model", "read")
-async def get_model(model_name: str, version: Optional[str] = None):
-    """Get model details"""
-    try:
-        if version:
-            model_version = mlflow_client.get_model_version(model_name, version)
-        else:
-            latest_versions = mlflow_client.get_latest_versions(model_name, stages=["Production", "Staging", "None"])
-            if not latest_versions:
-                raise HTTPException(status_code=404, detail="Model not found")
-            model_version = latest_versions[0]
         
-        registered_model = mlflow_client.get_registered_model(model_name)
+    except Exception as e:
+        logger.error(f"❌ Error creating model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/models", response_model=List[ModelResponse])
+async def list_models(
+    skip: int = 0, 
+    limit: int = 100, 
+    status: Optional[str] = None,
+    framework: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """List all models with optional filtering"""
+    try:
+        query = db.query(ModelRecord)
+        
+        if status:
+            query = query.filter(ModelRecord.status == status)
+        if framework:
+            query = query.filter(ModelRecord.framework == framework)
+        
+        models = query.offset(skip).limit(limit).all()
+        
+        return [
+            ModelResponse(
+                id=str(model.id),
+                name=model.name,
+                version=model.version,
+                framework=model.framework,
+                model_type=model.model_type,
+                description=model.description,
+                tags=json.loads(model.tags) if model.tags else None,
+                metrics=json.loads(model.metrics) if model.metrics else None,
+                parameters=json.loads(model.parameters) if model.parameters else None,
+                artifact_uri=model.artifact_uri,
+                status=model.status,
+                created_at=model.created_at,
+                updated_at=model.updated_at,
+                created_by=model.created_by
+            )
+            for model in models
+        ]
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/models/{model_id}", response_model=ModelResponse)
+async def get_model(model_id: str, db: Session = Depends(get_db)):
+    """Get a specific model by ID"""
+    try:
+        # Try cache first
+        cache_key = f"model:{model_id}"
+        cached_data = redis_client.get(cache_key)
+        
+        if cached_data:
+            cached_model = json.loads(cached_data)
+            logger.info(f"📦 Retrieved model from cache: {model_id}")
+        
+        # Get from database
+        model = db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
         
         return ModelResponse(
-            id=f"{model_name}:{model_version.version}",
-            name=model_name,
-            version=model_version.version,
-            status=model_version.current_stage,
-            created_at=datetime.fromtimestamp(model_version.creation_timestamp / 1000),
-            updated_at=datetime.fromtimestamp(model_version.last_updated_timestamp / 1000),
-            metadata={
-                "description": registered_model.description,
-                "tags": dict(registered_model.tags) if registered_model.tags else {},
-                "run_id": model_version.run_id,
-                "source": model_version.source
-            }
+            id=str(model.id),
+            name=model.name,
+            version=model.version,
+            framework=model.framework,
+            model_type=model.model_type,
+            description=model.description,
+            tags=json.loads(model.tags) if model.tags else None,
+            metrics=json.loads(model.metrics) if model.metrics else None,
+            parameters=json.loads(model.parameters) if model.parameters else None,
+            artifact_uri=model.artifact_uri,
+            status=model.status,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+            created_by=model.created_by
         )
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error getting model {model_name}: {e}")
-        raise HTTPException(status_code=404, detail="Model not found")
+        logger.error(f"❌ Error getting model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/v1/models/{model_name}/deploy", response_model=DeploymentResponse)
-@auth.require_auth("model", "deploy")
-async def deploy_model(model_name: str, deployment_config: ModelDeploymentConfig, background_tasks: BackgroundTasks):
-    """Deploy a model to a target environment"""
+@app.put("/models/{model_id}", response_model=ModelResponse)
+async def update_model(model_id: str, model_update: ModelUpdate, db: Session = Depends(get_db)):
+    """Update a model record"""
     try:
-        # Get the model version
-        model_version = mlflow_client.get_model_version(model_name, deployment_config.model_id.split(':')[-1])
+        model = db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
         
-        # Create deployment record (in a real implementation, this would trigger actual deployment)
-        deployment_id = f"deploy_{model_name}_{deployment_config.deployment_name}_{int(datetime.utcnow().timestamp())}"
+        # Update fields
+        if model_update.description is not None:
+            model.description = model_update.description
+        if model_update.tags is not None:
+            model.tags = json.dumps(model_update.tags)
+        if model_update.status is not None:
+            model.status = model_update.status
         
-        # Add background task for actual deployment
-        background_tasks.add_task(perform_model_deployment, deployment_id, model_version, deployment_config)
+        model.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(model)
+        
+        # Update cache
+        cache_key = f"model:{model_id}"
+        redis_client.delete(cache_key)
+        
+        logger.info(f"✅ Updated model: {model_id}")
+        
+        return ModelResponse(
+            id=str(model.id),
+            name=model.name,
+            version=model.version,
+            framework=model.framework,
+            model_type=model.model_type,
+            description=model.description,
+            tags=json.loads(model.tags) if model.tags else None,
+            metrics=json.loads(model.metrics) if model.metrics else None,
+            parameters=json.loads(model.parameters) if model.parameters else None,
+            artifact_uri=model.artifact_uri,
+            status=model.status,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+            created_by=model.created_by
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error updating model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/models/{model_id}")
+async def delete_model(model_id: str, db: Session = Depends(get_db)):
+    """Delete a model record"""
+    try:
+        model = db.query(ModelRecord).filter(ModelRecord.id == model_id).first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+        
+        # Check if model has active deployments
+        active_deployments = db.query(ModelDeployment).filter(
+            ModelDeployment.model_id == model_id,
+            ModelDeployment.status == "active"
+        ).count()
+        
+        if active_deployments > 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot delete model with active deployments"
+            )
+        
+        db.delete(model)
+        db.commit()
+        
+        # Remove from cache
+        cache_key = f"model:{model_id}"
+        redis_client.delete(cache_key)
+        
+        logger.info(f"✅ Deleted model: {model_id}")
+        
+        return {"message": "Model deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error deleting model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Model Deployment Endpoints
+@app.post("/deployments", response_model=DeploymentResponse)
+async def create_deployment(deployment: DeploymentCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Create a new model deployment"""
+    try:
+        # Verify model exists
+        model = db.query(ModelRecord).filter(ModelRecord.id == deployment.model_id).first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+        
+        if model.status != "ready":
+            raise HTTPException(status_code=400, detail="Model is not ready for deployment")
+        
+        # Create deployment record
+        db_deployment = ModelDeployment(
+            model_id=deployment.model_id,
+            deployment_name=deployment.deployment_name,
+            environment=deployment.environment,
+            replicas=deployment.replicas,
+            cpu_request=deployment.cpu_request,
+            memory_request=deployment.memory_request
+        )
+        
+        db.add(db_deployment)
+        db.commit()
+        db.refresh(db_deployment)
+        
+        # Start deployment process in background
+        background_tasks.add_task(deploy_model_async, str(db_deployment.id), model.artifact_uri)
+        
+        logger.info(f"✅ Created deployment: {deployment.deployment_name}")
         
         return DeploymentResponse(
-            id=deployment_id,
-            model_id=deployment_config.model_id,
-            deployment_name=deployment_config.deployment_name,
-            status="deploying",
-            endpoint_url=f"https://api.002aic.com/v1/models/{model_name}/predict",
-            created_at=datetime.utcnow()
-        )
-    except Exception as e:
-        logger.error(f"Error deploying model {model_name}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to deploy model")
-
-@app.post("/v1/models/{model_name}/promote")
-@auth.require_auth("model", "update")
-async def promote_model(model_name: str, version: str, stage: str):
-    """Promote model to a different stage (Staging, Production)"""
-    try:
-        mlflow_client.transition_model_version_stage(
-            name=model_name,
-            version=version,
-            stage=stage,
-            archive_existing_versions=True
+            id=str(db_deployment.id),
+            model_id=str(db_deployment.model_id),
+            deployment_name=db_deployment.deployment_name,
+            endpoint_url=db_deployment.endpoint_url,
+            environment=db_deployment.environment,
+            status=db_deployment.status,
+            replicas=db_deployment.replicas,
+            created_at=db_deployment.created_at,
+            updated_at=db_deployment.updated_at
         )
         
-        return {"message": f"Model {model_name} version {version} promoted to {stage}"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error promoting model {model_name}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to promote model")
+        logger.error(f"❌ Error creating deployment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/v1/models/{model_name}")
-@auth.require_auth("model", "delete")
-async def delete_model(model_name: str):
-    """Delete a registered model"""
+async def deploy_model_async(deployment_id: str, artifact_uri: str):
+    """Async function to deploy model"""
     try:
-        mlflow_client.delete_registered_model(model_name)
-        return {"message": f"Model {model_name} deleted successfully"}
+        db = SessionLocal()
+        deployment = db.query(ModelDeployment).filter(ModelDeployment.id == deployment_id).first()
+        
+        if deployment:
+            # Simulate deployment process
+            await asyncio.sleep(5)  # Simulate deployment time
+            
+            # Update deployment status
+            deployment.status = "active"
+            deployment.endpoint_url = f"http://model-serving:8501/v1/models/{deployment.deployment_name}:predict"
+            deployment.updated_at = datetime.utcnow()
+            
+            db.commit()
+            
+            logger.info(f"✅ Deployment completed: {deployment_id}")
+        
+        db.close()
+        
     except Exception as e:
-        logger.error(f"Error deleting model {model_name}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete model")
+        logger.error(f"❌ Deployment failed: {e}")
+        # Update deployment status to failed
+        db = SessionLocal()
+        deployment = db.query(ModelDeployment).filter(ModelDeployment.id == deployment_id).first()
+        if deployment:
+            deployment.status = "failed"
+            deployment.updated_at = datetime.utcnow()
+            db.commit()
+        db.close()
 
-# Background task for model deployment
-async def perform_model_deployment(deployment_id: str, model_version, deployment_config: ModelDeploymentConfig):
-    """Background task to perform actual model deployment"""
+@app.get("/deployments", response_model=List[DeploymentResponse])
+async def list_deployments(
+    skip: int = 0, 
+    limit: int = 100, 
+    environment: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """List all deployments"""
     try:
-        logger.info(f"Starting deployment {deployment_id}")
+        query = db.query(ModelDeployment)
         
-        # Simulate deployment process
-        await asyncio.sleep(5)  # Simulate deployment time
+        if environment:
+            query = query.filter(ModelDeployment.environment == environment)
+        if status:
+            query = query.filter(ModelDeployment.status == status)
         
-        # In a real implementation, this would:
-        # 1. Pull model artifacts from MLflow
-        # 2. Create Kubernetes deployment
-        # 3. Set up service and ingress
-        # 4. Configure monitoring and logging
-        # 5. Run health checks
+        deployments = query.offset(skip).limit(limit).all()
         
-        logger.info(f"Deployment {deployment_id} completed successfully")
+        return [
+            DeploymentResponse(
+                id=str(deployment.id),
+                model_id=str(deployment.model_id),
+                deployment_name=deployment.deployment_name,
+                endpoint_url=deployment.endpoint_url,
+                environment=deployment.environment,
+                status=deployment.status,
+                replicas=deployment.replicas,
+                created_at=deployment.created_at,
+                updated_at=deployment.updated_at
+            )
+            for deployment in deployments
+        ]
+        
     except Exception as e:
-        logger.error(f"Deployment {deployment_id} failed: {e}")
+        logger.error(f"❌ Error listing deployments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Prediction endpoint
+@app.post("/predict", response_model=PredictionResponse)
+async def make_prediction(request: PredictionRequest, db: Session = Depends(get_db)):
+    """Make a prediction using a deployed model"""
+    try:
+        # Get model info
+        model = db.query(ModelRecord).filter(ModelRecord.id == request.model_id).first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+        
+        # Find active deployment
+        deployment = db.query(ModelDeployment).filter(
+            ModelDeployment.model_id == request.model_id,
+            ModelDeployment.status == "active"
+        ).first()
+        
+        if not deployment:
+            raise HTTPException(status_code=404, detail="No active deployment found for model")
+        
+        # Make prediction (simulate for now)
+        prediction_id = str(uuid.uuid4())
+        
+        # TODO: Implement actual prediction logic based on model framework
+        # For now, return a mock prediction
+        mock_prediction = {
+            "class": "positive",
+            "probability": 0.85,
+            "confidence": "high"
+        }
+        
+        # Log prediction for monitoring
+        prediction_log = {
+            "prediction_id": prediction_id,
+            "model_id": request.model_id,
+            "model_version": model.version,
+            "input_data": request.input_data,
+            "prediction": mock_prediction,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Store in Redis for monitoring
+        redis_client.setex(f"prediction:{prediction_id}", 86400, json.dumps(prediction_log))
+        
+        logger.info(f"✅ Prediction made: {prediction_id}")
+        
+        return PredictionResponse(
+            prediction=mock_prediction,
+            model_id=request.model_id,
+            model_version=model.version,
+            prediction_id=prediction_id,
+            timestamp=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error making prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Metrics endpoint
+@app.get("/metrics")
+async def get_metrics():
+    """Get service metrics"""
+    try:
+        db = SessionLocal()
+        
+        # Count models by status
+        model_counts = {}
+        for status in ["training", "ready", "deployed", "archived"]:
+            count = db.query(ModelRecord).filter(ModelRecord.status == status).count()
+            model_counts[f"models_{status}"] = count
+        
+        # Count deployments by status
+        deployment_counts = {}
+        for status in ["deploying", "active", "inactive", "failed"]:
+            count = db.query(ModelDeployment).filter(ModelDeployment.status == status).count()
+            deployment_counts[f"deployments_{status}"] = count
+        
+        db.close()
+        
+        return {
+            "service": "model-management-service",
+            "timestamp": datetime.utcnow().isoformat(),
+            **model_counts,
+            **deployment_counts
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=int(os.getenv("PORT", 8080)),
-        reload=os.getenv("ENVIRONMENT") == "development"
+        port=SERVICE_PORT,
+        reload=True,
+        log_level="info"
     )

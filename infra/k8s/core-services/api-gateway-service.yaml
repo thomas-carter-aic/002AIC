@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-service
+  namespace: aic-platform
+  labels:
+    app: api-gateway-service
+    tier: core
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: api-gateway-service
+  template:
+    metadata:
+      labels:
+        app: api-gateway-service
+        tier: core
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: api-gateway-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: api-gateway-service
+        image: 002aic/api-gateway-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: HTTPS_PORT
+          value: "8443"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: gateway-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: jwt-secret
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: SERVICE_DISCOVERY_URL
+          value: "http://service-discovery.aic-platform.svc.cluster.local"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tls-certs
+          mountPath: /app/certs
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: api-gateway-service-config
+      - name: tls-certs
+        secret:
+          secretName: api-gateway-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+  namespace: aic-platform
+  labels:
+    app: api-gateway-service
+    tier: core
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
+    name: https
+  selector:
+    app: api-gateway-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-gateway-service
+  namespace: aic-platform
+  labels:
+    app: api-gateway-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-service-config
+  namespace: aic-platform
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      https_port: 8443
+      timeout: 30s
+    gateway:
+      rate_limiting:
+        enabled: true
+        requests_per_minute: 1000
+      cors:
+        enabled: true
+        allowed_origins: ["*"]
+      authentication:
+        jwt_validation: true
+        api_key_validation: true
+    upstream_services:
+      auth_service: "http://auth-service.aic-platform.svc.cluster.local"
+      config_service: "http://configuration-service.aic-platform.svc.cluster.local"
+      discovery_service: "http://service-discovery.aic-platform.svc.cluster.local"
+      health_service: "http://health-check-service.aic-platform.svc.cluster.local"
+    logging:
+      level: info
+      format: json

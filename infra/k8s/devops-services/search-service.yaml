@@ -1,0 +1,248 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-service
+  namespace: aic-devops
+  labels:
+    app: search-service
+    tier: devops
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: search-service
+  template:
+    metadata:
+      labels:
+        app: search-service
+        tier: devops
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: search-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: search-service
+        image: 002aic/search-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-database-secret
+              key: search-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-redis-secret
+              key: url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service.aic-data.svc.cluster.local:9200"
+        - name: OPENSEARCH_URL
+          value: "http://opensearch-service.aic-devops.svc.cluster.local:9200"
+        - name: SOLR_URL
+          value: "http://solr-service.aic-devops.svc.cluster.local:8983"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: search-storage
+          mountPath: /app/data
+        - name: search-cache
+          mountPath: /app/cache
+      volumes:
+      - name: config
+        configMap:
+          name: search-service-config
+      - name: search-storage
+        persistentVolumeClaim:
+          claimName: search-pvc
+      - name: search-cache
+        persistentVolumeClaim:
+          claimName: search-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-service
+  namespace: aic-devops
+  labels:
+    app: search-service
+    tier: devops
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: search-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: search-service
+  namespace: aic-devops
+  labels:
+    app: search-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: search-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: search-cache-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-service-config
+  namespace: aic-devops
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    search:
+      default_engine: "elasticsearch"
+      engines:
+        elasticsearch:
+          enabled: true
+          index_prefix: "002aic"
+          shards: 3
+          replicas: 1
+        opensearch:
+          enabled: true
+          index_prefix: "002aic-os"
+          shards: 3
+          replicas: 1
+        solr:
+          enabled: false
+          collection_prefix: "002aic"
+      indexing:
+        batch_size: 1000
+        max_concurrent_indexing: 5
+        auto_refresh: true
+        refresh_interval: "1s"
+      query:
+        max_results: 10000
+        default_page_size: 20
+        max_page_size: 100
+        timeout: 30s
+        highlight_enabled: true
+        fuzzy_search: true
+        autocomplete: true
+    content_types:
+      - name: "documents"
+        fields: ["title", "content", "author", "tags"]
+        analyzers: ["standard", "keyword"]
+        boost: 1.0
+      - name: "users"
+        fields: ["name", "email", "organization"]
+        analyzers: ["standard"]
+        boost: 0.8
+      - name: "datasets"
+        fields: ["name", "description", "tags", "schema"]
+        analyzers: ["standard", "keyword"]
+        boost: 1.2
+      - name: "models"
+        fields: ["name", "description", "framework", "tags"]
+        analyzers: ["standard", "keyword"]
+        boost: 1.1
+      - name: "logs"
+        fields: ["message", "level", "service", "timestamp"]
+        analyzers: ["standard"]
+        boost: 0.5
+    features:
+      faceted_search: true
+      geospatial_search: true
+      semantic_search: true
+      vector_search: true
+      real_time_suggestions: true
+      search_analytics: true
+    caching:
+      enabled: true
+      cache_path: "/app/cache"
+      ttl: 3600s
+      max_cache_size: "5GB"
+      query_cache: true
+      result_cache: true
+    security:
+      access_control: true
+      field_level_security: true
+      audit_logging: true
+      rate_limiting: true
+    monitoring:
+      metrics_enabled: true
+      performance_tracking: true
+      query_analytics: true
+      slow_query_logging: true
+    storage:
+      data_path: "/app/data"
+      cache_path: "/app/cache"
+    logging:
+      level: info
+      format: json

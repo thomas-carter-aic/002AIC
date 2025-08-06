@@ -7,29 +7,28 @@ rule_files:
   # - "second_rules.yml"
 
 scrape_configs:
-  # Kong metrics
-  - job_name: 'kong'
-    static_configs:
-      - targets: ['kong:8001']
-    metrics_path: '/metrics'
-    scrape_interval: 5s
-
-  # Kuma Control Plane metrics
-  - job_name: 'kuma-control-plane'
-    static_configs:
-      - targets: ['kuma-control-plane:5681']
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-
-  # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Future microservices will be added here
-  # Example for when we deploy authentication service:
-  # - job_name: 'authentication-service'
-  #   static_configs:
-  #     - targets: ['authentication-service:8080']
-  #   metrics_path: '/metrics'
-  #   scrape_interval: 15s
+  - job_name: 'kong'
+    static_configs:
+      - targets: ['kong:8001']
+    metrics_path: '/metrics'
+
+  - job_name: 'kuma-control-plane'
+    static_configs:
+      - targets: ['kuma-control-plane:5681']
+    metrics_path: '/metrics'
+
+  - job_name: 'nexus-services'
+    static_configs:
+      - targets: 
+        - 'authorization-service:8080'
+        - 'api-gateway-service:8080'
+        - 'user-management-service:8080'
+        - 'configuration-service:8080'
+        - 'discovery-service:8080'
+        - 'health-check-service:8080'
+    metrics_path: '/metrics'
+    scrape_interval: 10s

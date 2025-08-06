@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-platform
+  labels:
+    name: nexus-platform
+    environment: production
+    version: v2.0
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-ai
+  labels:
+    name: nexus-ai
+    environment: production
+    component: ai-ml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-monitoring
+  labels:
+    name: nexus-monitoring
+    environment: production
+    component: observability
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nexus-security
+  labels:
+    name: nexus-security
+    environment: production
+    component: security

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aic-platform
+  labels:
+    name: aic-platform
+    environment: production
+    platform: 002aic
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aic-monitoring
+  labels:
+    name: aic-monitoring
+    environment: production
+    platform: 002aic
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aic-system
+  labels:
+    name: aic-system
+    environment: production
+    platform: 002aic

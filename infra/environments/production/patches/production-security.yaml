@@ -1,0 +1,93 @@
+# Production security configurations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: production-service-account
+  namespace: core-platform
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/ProductionServiceRole
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: core-platform
+  name: production-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: production-role-binding
+  namespace: core-platform
+subjects:
+- kind: ServiceAccount
+  name: production-service-account
+  namespace: core-platform
+roleRef:
+  kind: Role
+  name: production-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: production-network-policy
+  namespace: core-platform
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: core-platform
+    - namespaceSelector:
+        matchLabels:
+          name: ai-ml-services
+    - namespaceSelector:
+        matchLabels:
+          name: data-services
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: core-platform
+    - namespaceSelector:
+        matchLabels:
+          name: ai-ml-services
+    - namespaceSelector:
+        matchLabels:
+          name: data-services
+    - namespaceSelector:
+        matchLabels:
+          name: infrastructure-services
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 27017
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53

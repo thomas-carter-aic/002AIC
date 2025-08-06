@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aic-devops
+  labels:
+    name: aic-devops
+    environment: production
+    platform: 002aic
+    tier: devops
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: devops-resource-quota
+  namespace: aic-devops
+spec:
+  hard:
+    requests.cpu: "15"
+    requests.memory: 30Gi
+    limits.cpu: "30"
+    limits.memory: 60Gi
+    persistentvolumeclaims: "8"
+    services.loadbalancers: "3"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: devops-limit-range
+  namespace: aic-devops
+spec:
+  limits:
+  - default:
+      cpu: "2"
+      memory: "4Gi"
+    defaultRequest:
+      cpu: "500m"
+      memory: "1Gi"
+    type: Container

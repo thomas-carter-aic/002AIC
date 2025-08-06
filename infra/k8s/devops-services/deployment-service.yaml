@@ -1,0 +1,295 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-service
+  namespace: aic-devops
+  labels:
+    app: deployment-service
+    tier: devops
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: deployment-service
+  template:
+    metadata:
+      labels:
+        app: deployment-service
+        tier: devops
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: deployment-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: deployment-service
+        image: 002aic/deployment-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-database-secret
+              key: deployment-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-redis-secret
+              key: url
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ARGOCD_SERVER
+          value: "argocd-server.aic-devops.svc.cluster.local:443"
+        - name: ARGOCD_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: devops-deployment-secret
+              key: argocd-token
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: devops-deployment-secret
+              key: github-token
+        - name: DOCKER_REGISTRY_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-registry-secret
+              key: registry-url
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: deployment-storage
+          mountPath: /app/data
+        - name: git-repos
+          mountPath: /app/repos
+      volumes:
+      - name: config
+        configMap:
+          name: deployment-service-config
+      - name: deployment-storage
+        persistentVolumeClaim:
+          claimName: deployment-pvc
+      - name: git-repos
+        persistentVolumeClaim:
+          claimName: git-repos-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-service
+  namespace: aic-devops
+  labels:
+    app: deployment-service
+    tier: devops
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: deployment-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployment-service
+  namespace: aic-devops
+  labels:
+    app: deployment-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: deployment-service
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets", "namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "appprojects"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: deployment-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: deployment-service
+subjects:
+- kind: ServiceAccount
+  name: deployment-service
+  namespace: aic-devops
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: deployment-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deployment-service-config
+  namespace: aic-devops
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    deployment:
+      max_concurrent_deployments: 5
+      deployment_timeout: 1800s
+      rollback_enabled: true
+      canary_deployments: true
+      blue_green_deployments: true
+      health_check_timeout: 300s
+    gitops:
+      enabled: true
+      provider: "argocd"
+      sync_policy: "automated"
+      self_heal: true
+      prune: true
+      auto_sync_interval: 180s
+    environments:
+      - name: "development"
+        namespace: "aic-dev"
+        auto_deploy: true
+        approval_required: false
+        rollback_on_failure: true
+      - name: "staging"
+        namespace: "aic-staging"
+        auto_deploy: false
+        approval_required: true
+        rollback_on_failure: true
+      - name: "production"
+        namespace: "aic-platform"
+        auto_deploy: false
+        approval_required: true
+        rollback_on_failure: false
+    strategies:
+      rolling_update:
+        enabled: true
+        max_unavailable: "25%"
+        max_surge: "25%"
+      blue_green:
+        enabled: true
+        preview_service: true
+        auto_promotion_enabled: false
+        scaledown_delay: 30s
+      canary:
+        enabled: true
+        steps: [10, 25, 50, 75, 100]
+        analysis_enabled: true
+        success_rate_threshold: 99
+        latency_threshold: 500
+    integrations:
+      github:
+        enabled: true
+        webhook_enabled: true
+        status_checks: true
+      docker_registry:
+        enabled: true
+        vulnerability_scanning: true
+        image_signing: true
+      slack:
+        enabled: true
+        notifications: true
+        channels: ["#deployments", "#alerts"]
+    monitoring:
+      deployment_metrics: true
+      success_rate_tracking: true
+      rollback_tracking: true
+      performance_monitoring: true
+    security:
+      rbac_enabled: true
+      admission_controllers: true
+      policy_enforcement: true
+      secret_management: true
+    storage:
+      data_path: "/app/data"
+      repos_path: "/app/repos"
+    logging:
+      level: info
+      format: json

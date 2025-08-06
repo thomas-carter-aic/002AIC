@@ -1,0 +1,249 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runtime-management-service
+  namespace: aic-devops
+  labels:
+    app: runtime-management-service
+    tier: devops
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: runtime-management-service
+  template:
+    metadata:
+      labels:
+        app: runtime-management-service
+        tier: devops
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: runtime-management-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: runtime-management-service
+        image: 002aic/runtime-management-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-database-secret
+              key: runtime-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-redis-secret
+              key: url
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: DOCKER_REGISTRY_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-registry-secret
+              key: registry-url
+        - name: DOCKER_REGISTRY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: devops-registry-secret
+              key: username
+        - name: DOCKER_REGISTRY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: devops-registry-secret
+              key: password
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: runtime-storage
+          mountPath: /app/data
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: runtime-management-service-config
+      - name: runtime-storage
+        persistentVolumeClaim:
+          claimName: runtime-management-pvc
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: runtime-management-service
+  namespace: aic-devops
+  labels:
+    app: runtime-management-service
+    tier: devops
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: runtime-management-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runtime-management-service
+  namespace: aic-devops
+  labels:
+    app: runtime-management-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: runtime-management-service
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: runtime-management-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: runtime-management-service
+subjects:
+- kind: ServiceAccount
+  name: runtime-management-service
+  namespace: aic-devops
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: runtime-management-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runtime-management-service-config
+  namespace: aic-devops
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    runtime:
+      max_concurrent_deployments: 10
+      deployment_timeout: 1800s
+      health_check_interval: 30s
+      auto_scaling_enabled: true
+      resource_monitoring: true
+    container_registry:
+      enabled: true
+      scan_images: true
+      vulnerability_threshold: "high"
+      cache_images: true
+    kubernetes:
+      default_namespace: "aic-platform"
+      resource_quotas_enabled: true
+      network_policies_enabled: true
+      pod_security_policies_enabled: true
+    environments:
+      - name: "development"
+        namespace: "aic-dev"
+        auto_deploy: true
+        resource_limits:
+          cpu: "2"
+          memory: "4Gi"
+      - name: "staging"
+        namespace: "aic-staging"
+        auto_deploy: false
+        resource_limits:
+          cpu: "4"
+          memory: "8Gi"
+      - name: "production"
+        namespace: "aic-platform"
+        auto_deploy: false
+        resource_limits:
+          cpu: "8"
+          memory: "16Gi"
+    monitoring:
+      metrics_enabled: true
+      alerts_enabled: true
+      log_aggregation: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

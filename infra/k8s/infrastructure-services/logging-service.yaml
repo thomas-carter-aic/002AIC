@@ -1,0 +1,268 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logging-service
+  namespace: aic-infrastructure
+  labels:
+    app: logging-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: logging-service
+  template:
+    metadata:
+      labels:
+        app: logging-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: logging-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: logging-service
+        image: 002aic/logging-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 5140
+          name: syslog
+          protocol: UDP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: logging-db-url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service.aic-data.svc.cluster.local:9200"
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logging-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: logging-service-config
+      - name: logging-storage
+        persistentVolumeClaim:
+          claimName: logging-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logging-service
+  namespace: aic-infrastructure
+  labels:
+    app: logging-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 5140
+    targetPort: 5140
+    protocol: UDP
+    name: syslog
+  selector:
+    app: logging-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: logging-service
+  namespace: aic-infrastructure
+  labels:
+    app: logging-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logging-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logging-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    logging:
+      centralized: true
+      real_time_processing: true
+      log_aggregation: true
+      structured_logging: true
+      log_enrichment: true
+    inputs:
+      syslog:
+        enabled: true
+        port: 5140
+        protocol: "udp"
+        format: "rfc3164"
+      http:
+        enabled: true
+        endpoint: "/logs"
+        authentication: true
+      kafka:
+        enabled: true
+        topics: ["application-logs", "system-logs", "audit-logs"]
+        consumer_group: "logging-service"
+      fluentd:
+        enabled: true
+        port: 24224
+        protocol: "tcp"
+    processing:
+      parsing: true
+      filtering: true
+      enrichment: true
+      transformation: true
+      deduplication: true
+    parsers:
+      - name: "json"
+        pattern: "^{.*}$"
+        format: "json"
+      - name: "nginx"
+        pattern: "nginx_access_log"
+        format: "regex"
+      - name: "apache"
+        pattern: "apache_access_log"
+        format: "regex"
+      - name: "kubernetes"
+        pattern: "k8s_container_log"
+        format: "json"
+    filters:
+      - name: "level_filter"
+        condition: "level >= INFO"
+        action: "keep"
+      - name: "sensitive_data"
+        condition: "message contains password"
+        action: "mask"
+      - name: "rate_limit"
+        condition: "source == debug"
+        action: "sample"
+        rate: 0.1
+    enrichment:
+      - name: "kubernetes_metadata"
+        enabled: true
+        fields: ["namespace", "pod", "container"]
+      - name: "geolocation"
+        enabled: true
+        field: "client_ip"
+      - name: "user_agent_parsing"
+        enabled: true
+        field: "user_agent"
+    outputs:
+      elasticsearch:
+        enabled: true
+        index_pattern: "logs-{+YYYY.MM.dd}"
+        template_enabled: true
+        ilm_enabled: true
+      kafka:
+        enabled: true
+        topic: "processed-logs"
+        partition_key: "source"
+      s3:
+        enabled: true
+        bucket: "002aic-logs-archive"
+        prefix: "year={year}/month={month}/day={day}"
+        compression: "gzip"
+    retention:
+      elasticsearch:
+        hot_phase: "7d"
+        warm_phase: "30d"
+        cold_phase: "90d"
+        delete_phase: "365d"
+      s3:
+        standard: "30d"
+        ia: "90d"
+        glacier: "365d"
+        deep_archive: "2555d"  # 7 years
+    alerting:
+      enabled: true
+      rules:
+        - name: "error_rate_high"
+          condition: "error_count > 100 in 5m"
+          severity: "warning"
+        - name: "critical_errors"
+          condition: "level == CRITICAL"
+          severity: "critical"
+        - name: "disk_space_low"
+          condition: "disk_usage > 90%"
+          severity: "warning"
+    monitoring:
+      metrics_enabled: true
+      performance_tracking: true
+      throughput_monitoring: true
+      error_tracking: true
+    security:
+      log_integrity: true
+      encryption_at_rest: true
+      access_control: true
+      audit_logging: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

@@ -1,0 +1,183 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-management-service
+  namespace: aic-data
+  labels:
+    app: user-management-service
+    tier: data
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: user-management-service
+  template:
+    metadata:
+      labels:
+        app: user-management-service
+        tier: data
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: user-management-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: user-management-service
+        image: 002aic/user-management-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-database-secret
+              key: user-management-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: data-redis-secret
+              key: url
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service.aic-platform.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: user-management-secret
+              key: encryption-key
+        - name: GDPR_COMPLIANCE
+          value: "true"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: user-data-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: user-management-service-config
+      - name: user-data-storage
+        persistentVolumeClaim:
+          claimName: user-management-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-management-service
+  namespace: aic-data
+  labels:
+    app: user-management-service
+    tier: data
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: user-management-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-management-service
+  namespace: aic-data
+  labels:
+    app: user-management-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-management-pvc
+  namespace: aic-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-management-service-config
+  namespace: aic-data
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    user_management:
+      max_users_per_org: 10000
+      password_policy:
+        min_length: 8
+        require_uppercase: true
+        require_lowercase: true
+        require_numbers: true
+        require_special_chars: true
+      session_timeout: 3600s
+      max_login_attempts: 5
+      lockout_duration: 900s
+    privacy:
+      gdpr_compliance: true
+      data_retention_days: 2555  # 7 years
+      anonymization_enabled: true
+      consent_tracking: true
+    notifications:
+      email_verification: true
+      password_reset: true
+      account_lockout: true
+    audit:
+      log_user_actions: true
+      log_admin_actions: true
+      retention_days: 2555
+    storage:
+      user_data_path: "/app/data"
+    logging:
+      level: info
+      format: json

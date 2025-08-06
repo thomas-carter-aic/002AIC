@@ -1,0 +1,236 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-service
+  namespace: aic-devops
+  labels:
+    app: monitoring-service
+    tier: devops
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: monitoring-service
+  template:
+    metadata:
+      labels:
+        app: monitoring-service
+        tier: devops
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: monitoring-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: monitoring-service
+        image: 002aic/monitoring-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-database-secret
+              key: monitoring-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: devops-redis-secret
+              key: url
+        - name: PROMETHEUS_URL
+          value: "http://prometheus-service.aic-monitoring.svc.cluster.local:9090"
+        - name: GRAFANA_URL
+          value: "http://grafana-service.aic-monitoring.svc.cluster.local:3000"
+        - name: GRAFANA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devops-monitoring-secret
+              key: grafana-api-key
+        - name: ALERTMANAGER_URL
+          value: "http://alertmanager-service.aic-devops.svc.cluster.local:9093"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: monitoring-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: monitoring-service-config
+      - name: monitoring-storage
+        persistentVolumeClaim:
+          claimName: monitoring-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring-service
+  namespace: aic-devops
+  labels:
+    app: monitoring-service
+    tier: devops
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: monitoring-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: monitoring-service
+  namespace: aic-devops
+  labels:
+    app: monitoring-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-service
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: monitoring-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: monitoring-service
+subjects:
+- kind: ServiceAccount
+  name: monitoring-service
+  namespace: aic-devops
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: monitoring-pvc
+  namespace: aic-devops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-service-config
+  namespace: aic-devops
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    monitoring:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      retention_days: 30
+      max_samples_per_query: 50000000
+    alerting:
+      enabled: true
+      smtp_host: "smtp.gmail.com"
+      smtp_port: 587
+      notification_channels:
+        - type: "email"
+          enabled: true
+        - type: "slack"
+          enabled: true
+        - type: "pagerduty"
+          enabled: true
+        - type: "webhook"
+          enabled: true
+    dashboards:
+      auto_provisioning: true
+      default_dashboards:
+        - "kubernetes-cluster-overview"
+        - "002aic-platform-overview"
+        - "service-performance"
+        - "infrastructure-health"
+        - "application-metrics"
+    metrics:
+      custom_metrics_enabled: true
+      business_metrics_enabled: true
+      sla_monitoring: true
+      cost_monitoring: true
+    integrations:
+      prometheus:
+        enabled: true
+        retention: "30d"
+      grafana:
+        enabled: true
+        admin_user: "admin"
+      alertmanager:
+        enabled: true
+        high_availability: true
+      jaeger:
+        enabled: true
+        sampling_rate: 0.1
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

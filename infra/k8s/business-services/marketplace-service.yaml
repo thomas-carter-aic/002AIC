@@ -1,0 +1,279 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketplace-service
+  namespace: aic-business
+  labels:
+    app: marketplace-service
+    tier: business
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: marketplace-service
+  template:
+    metadata:
+      labels:
+        app: marketplace-service
+        tier: business
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: marketplace-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: marketplace-service
+        image: 002aic/marketplace-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-database-secret
+              key: marketplace-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-redis-secret
+              key: url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service.aic-data.svc.cluster.local:9200"
+        - name: MODEL_REGISTRY_SERVICE_URL
+          value: "http://model-registry-service.aic-platform.svc.cluster.local"
+        - name: FILE_STORAGE_SERVICE_URL
+          value: "http://file-storage-service.aic-devops.svc.cluster.local"
+        - name: BILLING_SERVICE_URL
+          value: "http://billing-service.aic-business.svc.cluster.local"
+        - name: DOCKER_REGISTRY_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-marketplace-secret
+              key: docker-registry-url
+        - name: DOCKER_REGISTRY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: business-marketplace-secret
+              key: docker-registry-username
+        - name: DOCKER_REGISTRY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: business-marketplace-secret
+              key: docker-registry-password
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: marketplace-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: marketplace-service-config
+      - name: marketplace-storage
+        persistentVolumeClaim:
+          claimName: marketplace-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketplace-service
+  namespace: aic-business
+  labels:
+    app: marketplace-service
+    tier: business
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: marketplace-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: marketplace-service
+  namespace: aic-business
+  labels:
+    app: marketplace-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: marketplace-pvc
+  namespace: aic-business
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-service-config
+  namespace: aic-business
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    marketplace:
+      commission_rate: 0.15
+      review_required: true
+      auto_approval_threshold: 4.5
+      featured_listings_limit: 10
+      search_ranking_algorithm: "relevance_popularity"
+    categories:
+      - name: "AI Models"
+        subcategories: ["NLP", "Computer Vision", "Time Series", "Recommendation", "Classification"]
+        commission_rate: 0.20
+      - name: "Data Connectors"
+        subcategories: ["Databases", "APIs", "File Formats", "Streaming", "Cloud Storage"]
+        commission_rate: 0.15
+      - name: "Workflows"
+        subcategories: ["Data Processing", "ML Pipelines", "Business Logic", "Automation", "Integration"]
+        commission_rate: 0.10
+      - name: "Templates"
+        subcategories: ["Dashboards", "Reports", "Notebooks", "Applications", "Infrastructure"]
+        commission_rate: 0.05
+      - name: "Extensions"
+        subcategories: ["Plugins", "Widgets", "Themes", "Integrations", "Tools"]
+        commission_rate: 0.12
+    listing_types:
+      - name: "free"
+        price: 0
+        features: ["basic_listing", "community_support"]
+        review_priority: "low"
+      - name: "premium"
+        price: 99
+        features: ["featured_listing", "priority_support", "analytics"]
+        review_priority: "high"
+      - name: "enterprise"
+        price: 499
+        features: ["custom_branding", "dedicated_support", "sla_guarantee"]
+        review_priority: "highest"
+    content_types:
+      models:
+        formats: ["onnx", "tensorflow", "pytorch", "scikit-learn", "huggingface"]
+        max_size: "10GB"
+        security_scan: true
+        performance_benchmark: true
+      datasets:
+        formats: ["csv", "json", "parquet", "avro", "orc"]
+        max_size: "100GB"
+        quality_check: true
+        privacy_scan: true
+      code:
+        languages: ["python", "r", "sql", "javascript", "java"]
+        max_size: "1GB"
+        security_scan: true
+        license_check: true
+      containers:
+        registries: ["docker_hub", "ghcr", "ecr", "gcr"]
+        max_size: "50GB"
+        vulnerability_scan: true
+        malware_scan: true
+    monetization:
+      pricing_models: ["free", "one_time", "subscription", "usage_based", "freemium"]
+      payment_methods: ["credit_card", "paypal", "bank_transfer", "crypto"]
+      revenue_sharing: true
+      analytics_provided: true
+    quality_assurance:
+      automated_testing: true
+      security_scanning: true
+      performance_testing: true
+      compliance_checking: true
+      peer_review: true
+    discovery:
+      search:
+        enabled: true
+        faceted_search: true
+        auto_complete: true
+        semantic_search: true
+      recommendations:
+        enabled: true
+        collaborative_filtering: true
+        content_based: true
+        trending_items: true
+      categories:
+        enabled: true
+        hierarchical: true
+        tagging: true
+    user_experience:
+      ratings_reviews: true
+      wishlist: true
+      comparison_tool: true
+      try_before_buy: true
+      documentation_required: true
+    developer_tools:
+      api_access: true
+      webhooks: true
+      analytics_dashboard: true
+      revenue_reporting: true
+      version_management: true
+    compliance:
+      content_moderation: true
+      ip_protection: true
+      gdpr_compliance: true
+      export_controls: true
+      terms_enforcement: true
+    integrations:
+      github: true
+      gitlab: true
+      docker_hub: true
+      huggingface: true
+      kaggle: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

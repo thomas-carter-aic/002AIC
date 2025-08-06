@@ -1,0 +1,100 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configurations
+resources:
+  - ../../k8s/namespaces/
+  - ../../k8s/core-platform/
+  - ../../k8s/ai-ml-services/
+  - ../../k8s/data-services/
+  - ../../k8s/devops-services/
+  - ../../k8s/business-services/
+  - ../../k8s/infrastructure-services/
+
+# Common labels for development environment
+commonLabels:
+  environment: development
+  version: v0.1.0-dev
+  managed-by: kustomize
+
+# Namespace prefix for development
+namespace: ""
+
+# Image transformations for development (latest tags)
+images:
+  - name: auth-service
+    newTag: latest
+  - name: api-gateway-service
+    newTag: latest
+  - name: user-management-service
+    newTag: latest
+  - name: billing-service
+    newTag: latest
+  - name: model-training-service
+    newTag: latest
+  - name: model-inference-service
+    newTag: latest
+  - name: data-ingestion-service
+    newTag: latest
+  - name: workflow-orchestration-service
+    newTag: latest
+  - name: notification-service
+    newTag: latest
+  - name: monitoring-service
+    newTag: latest
+
+# Configuration transformations for development
+configMapGenerator:
+  - name: development-config
+    literals:
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - CACHE_TTL=300
+      - MAX_CONNECTIONS=100
+      - RATE_LIMIT=1000
+      - BACKUP_ENABLED=false
+      - ENCRYPTION_ENABLED=false
+      - COMPLIANCE_MODE=disabled
+
+# Secret transformations for development
+secretGenerator:
+  - name: development-secrets
+    literals:
+      - DATABASE_URL=postgresql://dev-user:dev-pass@dev-db:5432/nexus_dev
+      - REDIS_URL=redis://dev-redis:6379/0
+      - JWT_SECRET=dev-jwt-secret
+      - API_KEY=dev-api-key
+      - ENCRYPTION_KEY=dev-encryption-key
+
+# Replica transformations for development (minimal scale)
+replicas:
+  - name: auth-service
+    count: 1
+  - name: api-gateway-service
+    count: 1
+  - name: user-management-service
+    count: 1
+  - name: billing-service
+    count: 1
+  - name: notification-service
+    count: 1
+  - name: health-check-service
+    count: 1
+  - name: monitoring-service
+    count: 1
+  - name: analytics-service
+    count: 1
+  - name: model-training-service
+    count: 1
+  - name: model-inference-service
+    count: 1
+  - name: data-ingestion-service
+    count: 1
+  - name: workflow-orchestration-service
+    count: 1
+
+# Resource patches for development (minimal resources)
+patchesStrategicMerge:
+  - patches/development-resources.yaml

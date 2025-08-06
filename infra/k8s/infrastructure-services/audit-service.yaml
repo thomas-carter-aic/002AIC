@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: aic-infrastructure
+  labels:
+    app: audit-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: audit-service
+  template:
+    metadata:
+      labels:
+        app: audit-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: audit-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: audit-service
+        image: 002aic/audit-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: audit-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service.aic-data.svc.cluster.local:9200"
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: COMPLIANCE_MODE
+          value: "strict"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: audit-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: audit-service-config
+      - name: audit-storage
+        persistentVolumeClaim:
+          claimName: audit-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-service
+  namespace: aic-infrastructure
+  labels:
+    app: audit-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: audit-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-service
+  namespace: aic-infrastructure
+  labels:
+    app: audit-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    audit:
+      retention_days: 2555  # 7 years for compliance
+      encryption_enabled: true
+      immutable_logs: true
+      real_time_indexing: true
+      batch_processing: true
+      batch_size: 1000
+    event_types:
+      authentication:
+        - "user_login"
+        - "user_logout"
+        - "password_change"
+        - "mfa_enabled"
+        - "account_locked"
+      authorization:
+        - "permission_granted"
+        - "permission_denied"
+        - "role_assigned"
+        - "role_removed"
+      data_access:
+        - "data_read"
+        - "data_write"
+        - "data_delete"
+        - "data_export"
+        - "data_import"
+      system:
+        - "service_start"
+        - "service_stop"
+        - "configuration_change"
+        - "deployment"
+        - "backup_created"
+      business:
+        - "payment_processed"
+        - "subscription_created"
+        - "invoice_generated"
+        - "support_ticket_created"
+    compliance:
+      frameworks:
+        - "SOX"
+        - "GDPR"
+        - "HIPAA"
+        - "SOC2"
+        - "PCI_DSS"
+        - "ISO_27001"
+      automated_reporting: true
+      violation_detection: true
+      alert_on_violations: true
+    storage:
+      primary: "elasticsearch"
+      backup: "postgresql"
+      archival: "s3"
+      compression: true
+    search:
+      full_text_search: true
+      faceted_search: true
+      time_range_queries: true
+      user_activity_tracking: true
+    privacy:
+      pii_detection: true
+      data_masking: true
+      anonymization: true
+      right_to_be_forgotten: true
+    monitoring:
+      metrics_enabled: true
+      anomaly_detection: true
+      suspicious_activity_alerts: true
+      compliance_dashboards: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

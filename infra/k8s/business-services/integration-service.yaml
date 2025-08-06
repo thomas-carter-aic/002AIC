@@ -1,0 +1,273 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: integration-service
+  namespace: aic-business
+  labels:
+    app: integration-service
+    tier: business
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: integration-service
+  template:
+    metadata:
+      labels:
+        app: integration-service
+        tier: business
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: integration-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: integration-service
+        image: 002aic/integration-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-database-secret
+              key: integration-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: business-redis-secret
+              key: url
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        - name: ZAPIER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: business-integration-secret
+              key: zapier-api-key
+        - name: SALESFORCE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: business-integration-secret
+              key: salesforce-client-id
+        - name: SALESFORCE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: business-integration-secret
+              key: salesforce-client-secret
+        - name: HUBSPOT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: business-integration-secret
+              key: hubspot-api-key
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: integration-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: integration-service-config
+      - name: integration-storage
+        persistentVolumeClaim:
+          claimName: integration-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: integration-service
+  namespace: aic-business
+  labels:
+    app: integration-service
+    tier: business
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: integration-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: integration-service
+  namespace: aic-business
+  labels:
+    app: integration-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: integration-pvc
+  namespace: aic-business
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: integration-service-config
+  namespace: aic-business
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 60s
+    integrations:
+      max_concurrent_integrations: 50
+      sync_interval: 300s
+      retry_attempts: 3
+      timeout: 30s
+      rate_limiting: true
+    connectors:
+      crm:
+        - name: "salesforce"
+          enabled: true
+          sync_direction: "bidirectional"
+          objects: ["Account", "Contact", "Lead", "Opportunity"]
+          real_time: true
+        - name: "hubspot"
+          enabled: true
+          sync_direction: "bidirectional"
+          objects: ["companies", "contacts", "deals", "tickets"]
+          real_time: true
+        - name: "pipedrive"
+          enabled: false
+          sync_direction: "bidirectional"
+          objects: ["organizations", "persons", "deals"]
+          real_time: false
+      marketing:
+        - name: "mailchimp"
+          enabled: true
+          sync_direction: "outbound"
+          objects: ["lists", "campaigns", "subscribers"]
+          real_time: false
+        - name: "sendgrid"
+          enabled: true
+          sync_direction: "outbound"
+          objects: ["contacts", "lists", "campaigns"]
+          real_time: true
+      productivity:
+        - name: "slack"
+          enabled: true
+          sync_direction: "bidirectional"
+          objects: ["channels", "messages", "users"]
+          real_time: true
+        - name: "microsoft_teams"
+          enabled: false
+          sync_direction: "bidirectional"
+          objects: ["teams", "channels", "messages"]
+          real_time: true
+        - name: "google_workspace"
+          enabled: true
+          sync_direction: "bidirectional"
+          objects: ["users", "groups", "calendar_events"]
+          real_time: false
+      analytics:
+        - name: "google_analytics"
+          enabled: true
+          sync_direction: "inbound"
+          objects: ["sessions", "events", "conversions"]
+          real_time: false
+        - name: "mixpanel"
+          enabled: true
+          sync_direction: "outbound"
+          objects: ["events", "users", "cohorts"]
+          real_time: true
+      automation:
+        - name: "zapier"
+          enabled: true
+          webhook_support: true
+          trigger_support: true
+        - name: "microsoft_power_automate"
+          enabled: false
+          webhook_support: true
+          trigger_support: true
+    data_mapping:
+      auto_mapping: true
+      field_validation: true
+      data_transformation: true
+      conflict_resolution: "latest_wins"
+    webhooks:
+      enabled: true
+      max_retries: 5
+      retry_backoff: "exponential"
+      signature_verification: true
+      rate_limiting: true
+    api_management:
+      rate_limiting:
+        requests_per_minute: 1000
+        burst_limit: 100
+      authentication:
+        oauth2: true
+        api_keys: true
+        jwt: true
+      versioning: true
+      documentation: true
+    monitoring:
+      sync_metrics: true
+      error_tracking: true
+      performance_monitoring: true
+      data_quality_checks: true
+    security:
+      encryption_at_rest: true
+      encryption_in_transit: true
+      credential_management: true
+      audit_logging: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

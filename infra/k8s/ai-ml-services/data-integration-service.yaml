@@ -1,0 +1,194 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-integration-service
+  namespace: aic-ai-ml
+  labels:
+    app: data-integration-service
+    tier: ai-ml
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: data-integration-service
+  template:
+    metadata:
+      labels:
+        app: data-integration-service
+        tier: ai-ml
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: data-integration-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: data-integration-service
+        image: 002aic/data-integration-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-database-secret
+              key: data-integration-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-redis-secret
+              key: url
+        - name: DATA_MANAGEMENT_SERVICE_URL
+          value: "http://data-management-service.aic-platform.svc.cluster.local"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: SPARK_MASTER_URL
+          value: "spark://spark-master:7077"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: data-storage
+          mountPath: /app/data
+        - name: temp-storage
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: data-integration-service-config
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: data-integration-pvc
+      - name: temp-storage
+        emptyDir:
+          sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-integration-service
+  namespace: aic-ai-ml
+  labels:
+    app: data-integration-service
+    tier: ai-ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: data-integration-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-integration-service
+  namespace: aic-ai-ml
+  labels:
+    app: data-integration-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-integration-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-integration-service-config
+  namespace: aic-ai-ml
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 300s
+    integration:
+      max_concurrent_jobs: 5
+      job_timeout: 3600s
+      batch_size: 10000
+      retry_attempts: 3
+    connectors:
+      databases:
+        - type: "postgresql"
+          enabled: true
+        - type: "mysql"
+          enabled: true
+        - type: "mongodb"
+          enabled: true
+      cloud_storage:
+        - type: "s3"
+          enabled: true
+        - type: "gcs"
+          enabled: true
+        - type: "azure_blob"
+          enabled: true
+      streaming:
+        - type: "kafka"
+          enabled: true
+        - type: "kinesis"
+          enabled: true
+    processing:
+      spark:
+        enabled: true
+        executor_memory: "2g"
+        executor_cores: 2
+        max_executors: 10
+      pandas:
+        enabled: true
+        chunk_size: 10000
+    storage:
+      data_path: "/app/data"
+      temp_path: "/tmp"
+    logging:
+      level: info
+      format: json

@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: aic-infrastructure
+  labels:
+    app: notification-service
+    tier: infrastructure
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        tier: infrastructure
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: notification-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: notification-service
+        image: 002aic/notification-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-database-secret
+              key: notification-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-redis-secret
+              key: url
+        - name: KAFKA_BROKERS
+          value: "kafka-service.aic-platform.svc.cluster.local:9092"
+        - name: SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: smtp-host
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: smtp-username
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: smtp-password
+        - name: SENDGRID_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: sendgrid-api-key
+        - name: TWILIO_ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: twilio-account-sid
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: infrastructure-notification-secret
+              key: twilio-auth-token
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: notification-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: notification-service-config
+      - name: notification-storage
+        persistentVolumeClaim:
+          claimName: notification-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: aic-infrastructure
+  labels:
+    app: notification-service
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: notification-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-service
+  namespace: aic-infrastructure
+  labels:
+    app: notification-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notification-pvc
+  namespace: aic-infrastructure
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: aic-infrastructure
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    notification:
+      max_concurrent_notifications: 100
+      retry_attempts: 3
+      retry_delay: "30s"
+      batch_size: 50
+      rate_limiting: true
+    channels:
+      email:
+        enabled: true
+        provider: "sendgrid"
+        fallback_provider: "smtp"
+        template_engine: "handlebars"
+        tracking: true
+      sms:
+        enabled: true
+        provider: "twilio"
+        fallback_provider: "aws_sns"
+        character_limit: 160
+      push:
+        enabled: true
+        providers: ["fcm", "apns"]
+        badge_updates: true
+      slack:
+        enabled: true
+        webhook_support: true
+        channel_routing: true
+      webhook:
+        enabled: true
+        signature_verification: true
+        retry_policy: "exponential"
+    templates:
+      email:
+        - name: "welcome"
+          subject: "Welcome to 002AIC Platform"
+          template_path: "/templates/email/welcome.html"
+        - name: "password_reset"
+          subject: "Reset Your Password"
+          template_path: "/templates/email/password_reset.html"
+        - name: "billing_invoice"
+          subject: "Your Invoice is Ready"
+          template_path: "/templates/email/billing_invoice.html"
+      sms:
+        - name: "verification_code"
+          template: "Your verification code is: {{code}}"
+        - name: "alert"
+          template: "Alert: {{message}}"
+    preferences:
+      user_preferences: true
+      opt_out_support: true
+      frequency_capping: true
+      quiet_hours: "22:00-08:00"
+    analytics:
+      delivery_tracking: true
+      open_tracking: true
+      click_tracking: true
+      bounce_handling: true
+    storage:
+      data_path: "/app/data"
+    logging:
+      level: info
+      format: json

@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-orchestration-service
+  namespace: aic-ai-ml
+  labels:
+    app: agent-orchestration-service
+    tier: ai-ml
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: agent-orchestration-service
+  template:
+    metadata:
+      labels:
+        app: agent-orchestration-service
+        tier: ai-ml
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: agent-orchestration-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: agent-orchestration-service
+        image: 002aic/agent-orchestration-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-database-secret
+              key: agent-db-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-ml-redis-secret
+              key: url
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service.aic-platform.svc.cluster.local"
+        - name: CONFIG_SERVICE_URL
+          value: "http://configuration-service.aic-platform.svc.cluster.local"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: agent-storage
+          mountPath: /app/data
+      volumes:
+      - name: config
+        configMap:
+          name: agent-orchestration-service-config
+      - name: agent-storage
+        persistentVolumeClaim:
+          claimName: agent-orchestration-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-orchestration-service
+  namespace: aic-ai-ml
+  labels:
+    app: agent-orchestration-service
+    tier: ai-ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: agent-orchestration-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-orchestration-service
+  namespace: aic-ai-ml
+  labels:
+    app: agent-orchestration-service
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-orchestration-pvc
+  namespace: aic-ai-ml
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-orchestration-service-config
+  namespace: aic-ai-ml
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      timeout: 30s
+    orchestration:
+      max_concurrent_agents: 100
+      agent_timeout: 300s
+      retry_attempts: 3
+      queue_size: 1000
+    agents:
+      default_memory_limit: "512Mi"
+      default_cpu_limit: "500m"
+      execution_timeout: 600s
+    logging:
+      level: info
+      format: json
