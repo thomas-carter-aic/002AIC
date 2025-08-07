@@ -659,4 +659,6 @@ class FeatureStore:
 
 **Ready to build AI-native applications!** 🚀
 
-The Nexus Platform provides a complete AI/ML development environment with enterprise-grade capabilities. Start experimenting with the provided examples and scale to production-ready AI applications.
+The Nexus Platform provides a complete AI/ML development environment with enterprise-grade 
+capabilities. Start experimenting with the provided examples and scale to production-ready 
+AI applications.
