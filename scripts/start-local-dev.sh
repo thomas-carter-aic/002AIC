@@ -66,7 +66,7 @@ wait_for_postgres() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if docker exec nexus-postgres-1 pg_isready -U nexus > /dev/null 2>&1; then
+        if docker exec docker-compose-postgres-1 pg_isready -U nexus > /dev/null 2>&1; then
             print_success "PostgreSQL is ready"
             return 0
         fi
@@ -203,8 +203,8 @@ main() {
     echo ""
     echo "🗄️  Databases:"
     echo "   - PostgreSQL: localhost:5433 (nexus/nexus-password)"
-    echo "   - MongoDB: localhost:27017 (nexus/nexus-password)"
-    echo "   - Redis: localhost:6379 (password: nexus-password)"
+    echo "   - MongoDB: localhost:17017 (nexus/nexus-password)"
+    echo "   - Redis: localhost:16379 (password: nexus-password)"
     echo ""
     echo "📡 Messaging:"
     echo "   - Kafka: localhost:29092"

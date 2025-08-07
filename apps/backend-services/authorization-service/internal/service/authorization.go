@@ -9,6 +9,7 @@ import (
 	"github.com/002aic/authorization-service/internal/models"
 	"github.com/002aic/authorization-service/internal/repository"
 	"github.com/casbin/casbin/v2"
+	"github.com/casbin/casbin/v2/model"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"go.uber.org/zap"
 )
@@ -27,7 +28,31 @@ func NewAuthorizationService(policyRepo repository.PolicyRepository, cacheRepo r
 		logger.Fatal("Failed to initialize Casbin adapter", zap.Error(err))
 	}
 
-	enforcer, err := casbin.NewEnforcer("config/rbac_model.conf", adapter)
+	// Embedded RBAC model configuration
+	rbacModel := `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
+`
+
+	// Create enforcer with embedded model
+	m, err := model.NewModelFromString(rbacModel)
+	if err != nil {
+		logger.Fatal("Failed to create Casbin model", zap.Error(err))
+	}
+
+	enforcer, err := casbin.NewEnforcer(m, adapter)
 	if err != nil {
 		logger.Fatal("Failed to initialize Casbin enforcer", zap.Error(err))
 	}
